@@ -1,0 +1,32 @@
+#!/bin/busybox sh
+
+/bin/busybox --install -s /bin
+
+mkdir -p /dev
+mkdir -p /proc
+mkdir -p /sys
+mount -t proc none /proc
+mount -t sysfs none /sys
+mount -t devtmpfs none /dev
+
+
+CONSOLE=console
+export CONSOLE
+
+# Setup networking asusmes the tap network is running a dhcp server
+ip link set eth0 up
+udhcpc -b -i eth0 -s /bin/udhcpc.script
+
+EXEC=/bin/app-manager
+
+for arg in $(cat /proc/cmdline); do
+    if [ "$arg" = "shell" ]; then
+        EXEC=sh
+    elif [ "$arg" = "app-manager" ]; then
+        EXEC=/bin/app-manager
+    fi;
+done
+
+setsid cttyhack sh -c "exec $EXEC </dev/$CONSOLE >/dev/$CONSOLE 2>&1";
+
+poweroff -f
