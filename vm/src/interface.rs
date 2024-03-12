@@ -5,7 +5,7 @@ use log::debug;
 use thiserror::Error;
 use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream}, net::UnixStream};
 
-use crate::{app::ApplicationConfig, daemon::DaemonContext, realm::{NetworkConfig, Realm, RealmConfig, RealmError}};
+use crate::{app::ApplicationConfig, daemon::DaemonContext, qemu::{QEMURunner, VMBuilder}, realm::{NetworkConfig, Realm, RealmConfig, RealmError}};
 
 #[derive(Parser)]
 #[command(version, about, long_about = None)]
@@ -56,8 +56,10 @@ pub enum Command {
         kernel: PathBuf
     },
 
+    /// List all realms
     ListRealms {},
 
+    /// Create application in a realm
     CreateApplication {
         /// Application id
         #[clap(short, long)]
@@ -76,6 +78,7 @@ pub enum Command {
         secure_storage_size_mb: usize,
     },
 
+    /// Launch a configured realm
     LaunchRealm {
         /// Realm id to launch
         #[clap(short, long)]
@@ -87,6 +90,7 @@ pub enum Command {
 enum CommandResult {
     RealmCreated,
     ApplicationCreated,
+    RealmLaunched,
     Msg(String)
 }
 
@@ -95,6 +99,7 @@ impl Display for CommandResult {
         match &self {
             CommandResult::RealmCreated => write!(f, "RealmCreated"),
             CommandResult::ApplicationCreated => write!(f, "ApplicationCreated"),
+            CommandResult::RealmLaunched => write!(f, "RealmLaunched"),
             CommandResult::Msg(v) => write!(f, "{}", v)
         }
     }
@@ -153,11 +158,16 @@ impl ClientHandler {
                 .map_err(ClientHandlerError::CliSocketReadError)?;
             let line = line.trim();
 
+            if line.is_empty() {
+                break Ok(());
+            }
+
             debug!("Command: {:?}", line);
 
             let msg = match handler.handle_cli(line).await {
                 Ok(result) => format!("{}\n", result),
-                Err(error) => format!("{}\n", error)
+                Err(ClientHandlerError::CommandLineParsingError(err)) => format!("{}\n", err),
+                Err(error) => format!("{:?}\n", error)
             };
 
             debug!("Result: {}", msg);
@@ -195,16 +205,16 @@ impl ClientHandler {
             Command::ListRealms {  } => self.handle_list_realms(),
 
             Command::CreateApplication { id, realm_id, main_storage_size_mb, secure_storage_size_mb }
-                => self.handle_create_application(id, realm_id, ApplicationConfig { main_storage_size_mb, secure_storage_size_mb }),
+                => self.handle_create_application(id, realm_id, ApplicationConfig { main_storage_size_mb, secure_storage_size_mb }).await,
 
             Command::LaunchRealm { id } => self.handle_launch_realm(id),
         }
     }
 
-    fn handle_create_application(&mut self, id: String, realm_id: String, config: ApplicationConfig) -> Result<CommandResult, ClientHandlerError> {
+    async fn handle_create_application(&mut self, id: String, realm_id: String, config: ApplicationConfig) -> Result<CommandResult, ClientHandlerError> {
         self.realms.get_mut(&realm_id)
             .ok_or(ClientHandlerError::RealmDoesNotExist(realm_id))?
-            .create_application(id, config)?;
+            .create_application(id, config).await?;
         Ok(CommandResult::ApplicationCreated)
     }
 
@@ -226,7 +236,13 @@ impl ClientHandler {
     }
 
     fn handle_launch_realm(&mut self, id: String) -> Result<CommandResult, ClientHandlerError> {
+        let realm = self.realms.get_mut(&id)
+            .ok_or(ClientHandlerError::RealmDoesNotExist(id))?;
 
-        todo!()
+        let mut runner = QEMURunner::new();
+        runner.arg(&"-nographic");
+        realm.launch(&mut runner)?;
+
+        Ok(CommandResult::RealmLaunched)
     }
 }

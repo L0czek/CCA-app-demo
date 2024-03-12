@@ -628,6 +628,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-vsock",
+ "uuid",
 ]
 
 [[package]]

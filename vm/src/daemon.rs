@@ -54,8 +54,9 @@ impl Daemon {
 
             info!("Accepted connection from {:?}", addr);
 
+            let ctx = Arc::clone(&self.ctx);
             tokio::spawn(async move {
-                let _ = ClientHandler::run(stream).await;
+                let _ = ClientHandler::run(stream, ctx).await;
             });
         }
     }

@@ -1,9 +1,8 @@
-use std::{collections::HashMap, fs::{create_dir, create_dir_all}, path::PathBuf};
+use std::{collections::HashMap, fs::create_dir, path::PathBuf};
 
 use thiserror::Error;
-use tokio::net::unix::pid_t;
 
-use crate::app::{Application, ApplicationConfig, ApplicationError};
+use crate::{app::{Application, ApplicationConfig, ApplicationError}, qemu::{QEMUError, QEMUInstance, QEMURunner, VMBuilder}};
 
 #[derive(Error, Debug)]
 pub enum RealmError {
@@ -16,8 +15,17 @@ pub enum RealmError {
     #[error("Cannot create workdir")]
     WorkdirMkdirFail(#[source] std::io::Error),
 
-    #[error("Error while modyfing application")]
-    AppError(#[from] ApplicationError)
+    #[error("Error while modifing application")]
+    AppError(#[from] ApplicationError),
+
+    #[error("Path decoding error {0}")]
+    PathDecodingError(PathBuf),
+
+    #[error("Realm is already running")]
+    RealmAlreadyRunning(),
+
+    #[error("Realm launching error")]
+    RealmLaunchingError(#[from] QEMUError)
 }
 
 #[derive(Debug)]
@@ -44,7 +52,8 @@ pub struct RealmConfig {
 pub struct Realm {
     workdir: PathBuf,
     config: RealmConfig,
-    apps: HashMap<String, Application>
+    apps: HashMap<String, Application>,
+    instance: Option<QEMUInstance>
 }
 
 impl Realm {
@@ -57,26 +66,62 @@ impl Realm {
         Ok(Self {
             workdir,
             config,
-            apps: HashMap::new()
+            apps: HashMap::new(),
+            instance: None
         })
     }
 
-    pub fn create_application(&mut self, id: String, config: ApplicationConfig) -> Result<(), RealmError> {
+    pub async fn create_application(&mut self, id: String, config: ApplicationConfig) -> Result<(), RealmError> {
         if self.apps.contains_key(&id) {
             Err(RealmError::AppExists(id))
         } else {
             self.apps.insert(id.clone(), Application::new(
                     self.workdir.join(id),
                     config
-                )?
+                ).await?
             );
             Ok(())
         }
     }
 
-    pub fn launch(&mut self) -> Result<pid_t, RealmError> {
+    fn configure(&self, builder: &mut dyn VMBuilder) -> Result<(), RealmError> {
+        let log = self.workdir.join("console.log");
+        builder.stdout(
+            &log.to_str()
+                .ok_or(RealmError::PathDecodingError(log.clone()))?
+        );
 
 
-        Ok(0.into())
+        builder.cpu(&self.config.cpu);
+        builder.machine(&self.config.machine);
+        builder.core_count(self.config.core_count);
+        builder.ram_size(self.config.ram_size);
+        builder.tap_device(&self.config.network_config.tap_device);
+        builder.mac_addr(&self.config.network_config.mac_addr);
+        builder.vsock_cid(self.config.vsock_cid);
+
+        let kernel_path = &self.config.kernel;
+        builder.kernel(
+            &kernel_path.to_str()
+                .ok_or(RealmError::PathDecodingError(kernel_path.clone()))?
+        );
+
+        for (_, app) in self.apps.iter() {
+            app.configure(builder)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn launch(&mut self, runner: &mut QEMURunner) -> Result<(), RealmError> {
+        if self.instance.is_some() {
+            return Err(RealmError::RealmAlreadyRunning());
+        }
+
+        self.configure(runner)?;
+        self.instance = Some(runner.launch()?);
+
+        Ok(())
     }
 }
+
