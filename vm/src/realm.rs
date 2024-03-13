@@ -1,8 +1,11 @@
-use std::{collections::HashMap, fs::create_dir, path::PathBuf};
+use std::{collections::HashMap, fs::create_dir, path::PathBuf, sync::Arc, time::Duration};
 
 use thiserror::Error;
+use tokio::{select, spawn, sync::{oneshot::error::RecvError, Mutex}, task::JoinHandle, time};
+use tokio_vsock::VsockStream;
+use log::error;
 
-use crate::{app::{Application, ApplicationConfig, ApplicationError}, qemu::{QEMUError, QEMUInstance, QEMURunner, VMBuilder}};
+use crate::{app::{Application, ApplicationConfig, ApplicationError}, daemon::DaemonContext, protocol::RealmInfo, qemu::{QEMUError, QEMUInstance, QEMURunner, VMBuilder}, vsock::{ConnectionDispatcher, ConnectionDispatcherError}};
 
 #[derive(Error, Debug)]
 pub enum RealmError {
@@ -25,7 +28,19 @@ pub enum RealmError {
     RealmAlreadyRunning(),
 
     #[error("Realm launching error")]
-    RealmLaunchingError(#[from] QEMUError)
+    RealmLaunchingError(#[from] QEMUError),
+
+    #[error("Error receiving Vsock stream")]
+    VsockStreamRecv(#[source] ConnectionDispatcherError),
+
+    #[error("Error while reading tokio oneshot channel")]
+    ChannelError(#[from] RecvError),
+
+    #[error("Protocol serialization error")]
+    ProtocolError(#[from] serde_json::Error),
+
+    #[error("Realm didn't connect")]
+    VsockTimeout()
 }
 
 #[derive(Debug)]
@@ -53,7 +68,8 @@ pub struct Realm {
     workdir: PathBuf,
     config: RealmConfig,
     apps: HashMap<String, Application>,
-    instance: Option<QEMUInstance>
+    instance: Option<QEMUInstance>,
+    realm_handler: Option<JoinHandle<Result<(), RealmError>>>
 }
 
 impl Realm {
@@ -67,7 +83,8 @@ impl Realm {
             workdir,
             config,
             apps: HashMap::new(),
-            instance: None
+            instance: None,
+            realm_handler: None
         })
     }
 
@@ -113,7 +130,7 @@ impl Realm {
         Ok(())
     }
 
-    pub fn launch(&mut self, runner: &mut QEMURunner) -> Result<(), RealmError> {
+    pub fn launch(&mut self, runner: &mut QEMURunner, ctx: Arc<DaemonContext>) -> Result<(), RealmError> {
         if self.instance.is_some() {
             return Err(RealmError::RealmAlreadyRunning());
         }
@@ -121,7 +138,41 @@ impl Realm {
         self.configure(runner)?;
         self.instance = Some(runner.launch()?);
 
+        let cid = self.config.vsock_cid as u32;
+        let realm_info = self.realm_info();
+        self.realm_handler = Some(spawn(async move {
+            let stream = ctx.dispatcher
+                .lock().await
+                .request_stream(cid)
+                .map_err(RealmError::VsockStreamRecv)?;
+
+            let timeout = time::sleep(Duration::from_secs(90));
+
+            select! {
+                v = stream => {
+                    Realm::handle_realm(realm_info, v?).await
+                }
+
+                _ = timeout => {
+                    error!("Timeout, realm didn't connect to vsock");
+                    Err(RealmError::VsockTimeout())
+                }
+            }
+
+        }));
+
         Ok(())
+    }
+
+    async fn handle_realm(info: RealmInfo, stream: VsockStream) -> Result<(), RealmError> {
+        serde_json::to_writer(stream, &info)?;
+        Ok(())
+    }
+
+    fn realm_info(&self) -> RealmInfo {
+        RealmInfo {
+            apps: self.apps.iter().map(|(id, app)| (id.clone(), app.application_info())).collect()
+        }
     }
 }
 

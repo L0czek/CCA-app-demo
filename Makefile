@@ -26,6 +26,7 @@ APP_MANAGER_BIN    = $(APP_MANAGER_DIR)/target/aarch64-unknown-linux-gnu/debug/a
 INITRAMFS_DIR      = $(ROOT_DIR)/initramfs
 
 QEMU_TAP_DEVICE    ?= tap100
+QEMU_VSOCK_CID     ?= 100
 EXEC               ?= app-manager
 
 GREEN_COLOR = \\033[0;32m
@@ -74,7 +75,7 @@ deps: toolchains fetch-linux-kernel fetch-busybox fetch-strace fetch-gdb
 
 compile-busybox: $(BUSYBOX_DIR)/busybox $(CONFIG_DIR)/busybox.config
 	@echo "$(GREEN_COLOR)Building busybox.$(NC)"
-	@cp -v $(CONFIG_DIR)/busybox.config $(BUSYBOX_DIR)/.config
+	@[ -f "$(BUSYBOX_DIR)/.config" ] || cp -v $(CONFIG_DIR)/busybox.config $(BUSYBOX_DIR)/.config
 	@ARCH=aarch64 CROSS_COMPILE=aarch64-none-linux-gnu- \
 		$(MAKE) -C $(BUSYBOX_DIR) -j $(shell nproc)
 
@@ -128,7 +129,7 @@ prepare-initramfs: compile-busybox compile-strace compile-gdbserver compile-app-
 
 compile-image: prepare-initramfs $(KERNEL_DIR)
 	@echo "$(GREEN_COLOR)Building kernel image.$(NC)"
-	@cp -v "$(CONFIG_DIR)/kernel.config" "$(KERNEL_DIR)/.config"
+	@[ -f "$(BUSYBOX_DIR)/.config" ] || cp -v "$(CONFIG_DIR)/kernel.config" "$(KERNEL_DIR)/.config"
 	@ARCH=arm64 CROSS_COMPILE=aarch64-none-linux-gnu- $(MAKE) -C "$(KERNEL_DIR)" Image -j $(shell nproc)
 
 run: compile-image
@@ -155,6 +156,7 @@ run-only:
 		-m 2048 \
 		-netdev tap,id=mynet0,ifname=$(QEMU_TAP_DEVICE),script=no,downscript=no \
 		-device e1000,netdev=mynet0,mac=52:55:00:d1:55:01 \
+		-device vhost-vsock-pci,id=vhost-vsock-pci0,guest-cid=$(QEMU_VSOCK_CID) \
 		-append $(EXEC)
 
 	

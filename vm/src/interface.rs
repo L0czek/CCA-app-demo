@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Display, path::PathBuf, sync::Arc};
 use clap::{crate_name, Parser, Subcommand};
 use log::debug;
 use thiserror::Error;
-use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream}, net::UnixStream};
+use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream}, net::UnixStream, select};
 
 use crate::{app::ApplicationConfig, daemon::DaemonContext, qemu::{QEMURunner, VMBuilder}, realm::{NetworkConfig, Realm, RealmConfig, RealmError}};
 
@@ -139,7 +139,7 @@ impl ClientHandler {
     pub async fn run(mut stream: UnixStream, ctx: Arc<DaemonContext>) -> Result<(), ClientHandlerError> {
         let mut handler = Self {
             realms: HashMap::new(),
-            context: ctx
+            context: ctx.clone()
         };
 
         let mut stream = BufStream::new(&mut stream);
@@ -153,13 +153,22 @@ impl ClientHandler {
                 .map_err(ClientHandlerError::CliSocketWriteError)?;
 
             let mut line = String::new();
-            stream.read_line(&mut line)
-                .await
-                .map_err(ClientHandlerError::CliSocketReadError)?;
+
+            select! {
+                v = stream.read_line(&mut line) => {
+                    v.map_err(ClientHandlerError::CliSocketReadError)?;
+                }
+
+                _ = ctx.cancel.cancelled() => {
+                    debug!("Client handler thread exiting");
+                    break;
+                }
+            }
+
             let line = line.trim();
 
             if line.is_empty() {
-                break Ok(());
+                break;
             }
 
             debug!("Command: {:?}", line);
@@ -179,6 +188,8 @@ impl ClientHandler {
                 .await
                 .map_err(ClientHandlerError::CliSocketWriteError)?;
         }
+
+        Ok(())
     }
 
     async fn handle_cli<S: AsRef<str>>(&mut self, line: S) -> Result<CommandResult, ClientHandlerError> {
@@ -241,7 +252,7 @@ impl ClientHandler {
 
         let mut runner = QEMURunner::new();
         runner.arg(&"-nographic");
-        realm.launch(&mut runner)?;
+        realm.launch(&mut runner, self.context.clone())?;
 
         Ok(CommandResult::RealmLaunched)
     }

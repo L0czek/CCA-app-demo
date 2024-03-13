@@ -27,6 +27,7 @@ for arg in $(cat /proc/cmdline); do
     fi;
 done
 
+export RUST_LOG=debug
 setsid cttyhack sh -c "exec $EXEC </dev/$CONSOLE >/dev/$CONSOLE 2>&1";
 
 poweroff -f
