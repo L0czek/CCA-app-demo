@@ -4,3 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.81"
+env_logger = "0.11.3"
+log = "0.4.21"
+serde = { version = "1.0.197", features = ["derive", "alloc"] }
+serde_json = { version = "1.0.114", features = ["alloc"] }
+thiserror = "1.0.58"
+uuid = { version = "1.7.0", features = ["serde"] }
+vsock = "0.4.0"
