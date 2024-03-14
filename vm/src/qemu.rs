@@ -1,4 +1,4 @@
-use std::process::{Child, Command};
+use std::{env, process::{Child, Command}};
 
 use thiserror::Error;
 
@@ -35,12 +35,15 @@ pub trait VMBuilder {
 
 impl QEMURunner {
     pub fn new() -> Self {
+        let qemu = env::var("QEMU_BIN").unwrap_or(QEMU_BIN.to_string());
+
         Self {
-            command: Command::new(QEMU_BIN)
+            command: Command::new(qemu)
         }
     }
 
     pub fn launch(&mut self) -> Result<QEMUInstance, QEMUError> {
+        println!("cmd: {:?}", self.command);
         Ok(QEMUInstance::new(
             self.command.spawn()
                 .map_err(QEMUError::FailedToStart)?

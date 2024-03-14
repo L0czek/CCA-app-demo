@@ -1,7 +1,7 @@
 use std::{collections::HashMap, fs::create_dir, path::PathBuf, sync::Arc, time::Duration};
 
 use thiserror::Error;
-use tokio::{select, spawn, sync::{oneshot::error::RecvError, Mutex}, task::JoinHandle, time};
+use tokio::{select, spawn, sync::{oneshot::error::RecvError, Mutex}, task::{JoinHandle, JoinSet}, time};
 use tokio_vsock::VsockStream;
 use log::error;
 
@@ -69,7 +69,6 @@ pub struct Realm {
     config: RealmConfig,
     apps: HashMap<String, Application>,
     instance: Option<QEMUInstance>,
-    realm_handler: Option<JoinHandle<Result<(), RealmError>>>
 }
 
 impl Realm {
@@ -84,7 +83,6 @@ impl Realm {
             config,
             apps: HashMap::new(),
             instance: None,
-            realm_handler: None
         })
     }
 
@@ -130,7 +128,7 @@ impl Realm {
         Ok(())
     }
 
-    pub fn launch(&mut self, runner: &mut QEMURunner, ctx: Arc<DaemonContext>) -> Result<(), RealmError> {
+    pub fn launch(&mut self, runner: &mut QEMURunner, ctx: Arc<DaemonContext>, taskset: &mut JoinSet<Result<(), RealmError>>) -> Result<(), RealmError> {
         if self.instance.is_some() {
             return Err(RealmError::RealmAlreadyRunning());
         }
@@ -140,7 +138,8 @@ impl Realm {
 
         let cid = self.config.vsock_cid as u32;
         let realm_info = self.realm_info();
-        self.realm_handler = Some(spawn(async move {
+
+        taskset.spawn(async move {
             let stream = ctx.dispatcher
                 .lock().await
                 .request_stream(cid)
@@ -157,9 +156,13 @@ impl Realm {
                     error!("Timeout, realm didn't connect to vsock");
                     Err(RealmError::VsockTimeout())
                 }
+
+                _ = ctx.cancel.cancelled() => {
+                    return Ok(());
+                }
             }
 
-        }));
+        });
 
         Ok(())
     }

@@ -1,5 +1,5 @@
 use thiserror::Error;
-use vsock::{VsockAddr, VsockStream, VMADDR_CID_HOST};
+use vsock::{VsockAddr, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST, VMADDR_CID_LOCAL};
 use log::debug;
 use crate::protocol::RealmInfo;
 

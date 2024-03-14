@@ -20,6 +20,9 @@ STRACE_DIR         = $(TOOLS_DIR)/strace
 GDB_UPSTREAM       = https://ftp.gnu.org/gnu/gdb/gdb-14.1.tar.xz
 GDB_DIR            = $(TOOLS_DIR)/gdb
 
+QEMU_UPSTREAM      = https://github.com/qemu/qemu.git
+QEMU_DIR           = $(TOOLS_DIR)/qemu
+
 APP_MANAGER_DIR    = $(ROOT_DIR)/app-manager
 APP_MANAGER_BIN    = $(APP_MANAGER_DIR)/target/aarch64-unknown-linux-gnu/debug/app-manager
 
@@ -62,6 +65,11 @@ fetch-strace:
 	@echo "$(GREEN_COLOR)Fetching strace source.$(NC)"
 	@[ -d "$(STRACE_DIR)" ] || git clone --depth=1 $(STRACE_UPSTREAM) $(STRACE_DIR)
 
+fetch-qemu:
+	@echo "$(GREEN_COLOR)Fetching QEMU source.$(NC)"
+	@[ -d "$(QEMU_DIR)" ] || git clone --depth=1 $(QEMU_UPSTREAM) $(QEMU_DIR)
+
+
 fetch-gdb:
 	@echo "$(GREEN_COLOR)Fetching gdb source.$(NC)"
 	@[ -f "$(DOWNLOAD_DIR)/gdb.tar.xz" ] || \
@@ -71,7 +79,7 @@ fetch-gdb:
 	@rm -rf "$(GDB_DIR)"
 	@mv $(TOOLS_DIR)/*gdb* "$(TOOLS_DIR)/gdb"
 
-deps: toolchains fetch-linux-kernel fetch-busybox fetch-strace fetch-gdb
+deps: toolchains fetch-linux-kernel fetch-busybox fetch-strace fetch-gdb fetch-qemu
 
 compile-busybox: $(BUSYBOX_DIR)/busybox $(CONFIG_DIR)/busybox.config
 	@echo "$(GREEN_COLOR)Building busybox.$(NC)"
@@ -112,11 +120,19 @@ compile-gdbserver: $(GDB_DIR)
 	fi;
 	@$(MAKE) -C "$(GDB_DIR)/build" -j $(shell nproc)
 
+compile-qemu: $(QEMU_DIR)
+	@echo "$(GREEN_COLOR)Building QEMU.$(NC)"
+	@if [ ! -f "$(QEMU_DIR)/build/config-host.mak" ]; then \
+		cd "$(QEMU_DIR)" && ./configure --target-list=aarch64-softmmu; \
+	fi;
+	@$(MAKE) -C "$(QEMU_DIR)" -j $(shell nproc)
+	
+
 compile-app-manager: $(APP_MANAGER_DIR)
 	@echo "$(GREEN_COLOR)Building app-manager.$(NC)"
 	@cd $(APP_MANAGER_DIR) && cargo build --target=aarch64-unknown-linux-gnu
 
-prepare-initramfs: compile-busybox compile-strace compile-gdbserver compile-app-manager
+prepare-initramfs: compile-busybox compile-strace compile-gdbserver compile-app-manager compile-qemu
 	@echo "$(GREEN_COLOR)Preparing initramfs.$(NC)"
 	@[ -d "$(INITRAMFS_DIR)" ] || mkdir "$(INITRAMFS_DIR)"
 	@mkdir -p "$(INITRAMFS_DIR)/bin"

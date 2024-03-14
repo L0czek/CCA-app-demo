@@ -1,9 +1,9 @@
 use std::{collections::HashMap, fmt::Display, path::PathBuf, sync::Arc};
 
 use clap::{crate_name, Parser, Subcommand};
-use log::debug;
+use log::{debug, info};
 use thiserror::Error;
-use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream}, net::UnixStream, select};
+use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream}, net::UnixStream, select, task::JoinSet};
 
 use crate::{app::ApplicationConfig, daemon::DaemonContext, qemu::{QEMURunner, VMBuilder}, realm::{NetworkConfig, Realm, RealmConfig, RealmError}};
 
@@ -132,31 +132,39 @@ pub enum ClientHandlerError {
 #[derive(Debug)]
 pub struct ClientHandler {
     context: Arc<DaemonContext>,
-    realms: HashMap<String, Realm>
+    realms: HashMap<String, Realm>,
+    handler_threads: JoinSet<Result<(), RealmError>>,
+    stream: BufStream<UnixStream>
 }
 
 impl ClientHandler {
     pub async fn run(mut stream: UnixStream, ctx: Arc<DaemonContext>) -> Result<(), ClientHandlerError> {
         let mut handler = Self {
             realms: HashMap::new(),
-            context: ctx.clone()
+            context: ctx.clone(),
+            handler_threads: JoinSet::new(),
+            stream: BufStream::new(stream)
         };
 
-        let mut stream = BufStream::new(&mut stream);
+        handler.print_prompt().await?;
 
         loop {
-            stream.write_all("> ".as_bytes())
-                .await
-                .map_err(ClientHandlerError::CliSocketWriteError)?;
-            stream.flush()
-                .await
-                .map_err(ClientHandlerError::CliSocketWriteError)?;
 
             let mut line = String::new();
 
             select! {
-                v = stream.read_line(&mut line) => {
+                v = handler.stream.read_line(&mut line) => {
                     v.map_err(ClientHandlerError::CliSocketReadError)?;
+                    let cont = handler.handle_user_line(&line).await?;
+
+                    if !cont {
+                        break;
+                    }
+                }
+
+                t = handler.handler_threads.join_next(), if !handler.handler_threads.is_empty() => {
+                    info!("Realm provisioning threads has exited: {:?}", t);
+                    continue;
                 }
 
                 _ = ctx.cancel.cancelled() => {
@@ -164,32 +172,52 @@ impl ClientHandler {
                     break;
                 }
             }
+        }
 
-            let line = line.trim();
-
-            if line.is_empty() {
-                break;
-            }
-
-            debug!("Command: {:?}", line);
-
-            let msg = match handler.handle_cli(line).await {
-                Ok(result) => format!("{}\n", result),
-                Err(ClientHandlerError::CommandLineParsingError(err)) => format!("{}\n", err),
-                Err(error) => format!("{:?}\n", error)
-            };
-
-            debug!("Result: {}", msg);
-
-            stream.write_all(msg.as_bytes())
-                .await
-                .map_err(ClientHandlerError::CliSocketWriteError)?;
-            stream.flush()
-                .await
-                .map_err(ClientHandlerError::CliSocketWriteError)?;
+        while let Some(_) = handler.handler_threads.join_next().await {
+            debug!("Handler thread exited gracefully");
         }
 
         Ok(())
+    }
+
+    async fn print_prompt(&mut self) -> Result<(), ClientHandlerError> {
+        self.stream.write_all("> ".as_bytes())
+            .await
+            .map_err(ClientHandlerError::CliSocketWriteError)?;
+        self.stream.flush()
+            .await
+            .map_err(ClientHandlerError::CliSocketWriteError)?;
+
+        Ok(())
+    }
+
+    async fn handle_user_line(&mut self, line: &String) -> Result<bool, ClientHandlerError> {
+        let line = line.trim();
+
+        if line.is_empty() {
+            return Ok(false);
+        }
+
+        debug!("Command: {:?}", line);
+
+        let msg = match self.handle_cli(line).await {
+            Ok(result) => format!("{}\n", result),
+            Err(ClientHandlerError::CommandLineParsingError(err)) => format!("{}\n", err),
+            Err(error) => format!("{:?}\n", error)
+        };
+
+        debug!("Result: {}", msg);
+
+        self.stream.write_all(msg.as_bytes())
+            .await
+            .map_err(ClientHandlerError::CliSocketWriteError)?;
+        self.stream.flush()
+            .await
+            .map_err(ClientHandlerError::CliSocketWriteError)?;
+        self.print_prompt().await?;
+
+        Ok(true)
     }
 
     async fn handle_cli<S: AsRef<str>>(&mut self, line: S) -> Result<CommandResult, ClientHandlerError> {
@@ -252,7 +280,7 @@ impl ClientHandler {
 
         let mut runner = QEMURunner::new();
         runner.arg(&"-nographic");
-        realm.launch(&mut runner, self.context.clone())?;
+        realm.launch(&mut runner, self.context.clone(), &mut self.handler_threads)?;
 
         Ok(CommandResult::RealmLaunched)
     }
