@@ -30,7 +30,7 @@ struct Args {
 
     /// Vsock port to listen on
     #[clap(short, long, default_value_t = 1337)]
-    port: u32
+    port: u32,
 }
 
 

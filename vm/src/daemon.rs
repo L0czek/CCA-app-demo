@@ -4,7 +4,7 @@ use tokio::{net::UnixListener, select, spawn, sync::Mutex, task::{JoinHandle, Jo
 use log::{debug, info};
 use thiserror::Error;
 use tokio_util::sync::CancellationToken;
-use tokio_vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY, VMADDR_CID_HOST, VMADDR_CID_HYPERVISOR};
+use tokio_vsock::{VsockAddr, VsockListener, VMADDR_CID_ANY, VMADDR_CID_HOST, VMADDR_CID_HYPERVISOR, VMADDR_CID_LOCAL};
 
 use crate::{interface::ClientHandler, realm::RealmError, vsock::{ConnectionDispatcher, ConnectionDispatcherError}};
 
@@ -116,7 +116,7 @@ impl Daemon {
         debug!("Listening on vsock port {}", port);
 
         let mut listener = VsockListener::bind(
-            VsockAddr::new(VMADDR_CID_HOST, port)
+            VsockAddr::new(VMADDR_CID_ANY, port)
         ).map_err(DaemonError::VsockBindError)?;
 
         info!("Ready for realm connections");
