@@ -3,7 +3,8 @@ use std::{fs::create_dir, path::PathBuf};
 use thiserror::Error;
 use tokio::task::JoinError;
 
-use crate::{protocol::ApplicationInfo, qdisk::{QEMUDisk, QEMUDiskError}, qemu::VMBuilder};
+use crate::{qdisk::{QEMUDisk, QEMUDiskError}, qemu::VMBuilder};
+use protocol::ApplicationInfo;
 
 #[derive(Error, Debug)]
 pub enum ApplicationError {
@@ -77,8 +78,8 @@ impl Application {
 
     pub fn application_info(&self) -> ApplicationInfo {
         ApplicationInfo {
-            main_partition_uuid: self.main_storage.part_uuid().to_string(),
-            secure_partition_uuid: self.secure_storage.part_uuid().to_string()
+            main_partition_uuid: self.main_storage.part_uuid().clone(),
+            secure_partition_uuid: self.secure_storage.part_uuid().clone()
         }
     }
 }

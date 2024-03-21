@@ -5,7 +5,8 @@ use tokio::{select, spawn, sync::{oneshot::error::RecvError, Mutex}, task::{Join
 use tokio_vsock::VsockStream;
 use log::error;
 
-use crate::{app::{Application, ApplicationConfig, ApplicationError}, daemon::DaemonContext, protocol::RealmInfo, qemu::{QEMUError, QEMUInstance, QEMURunner, VMBuilder}, vsock::{ConnectionDispatcher, ConnectionDispatcherError}};
+use crate::{app::{Application, ApplicationConfig, ApplicationError}, daemon::DaemonContext, qemu::{QEMUError, QEMUInstance, QEMURunner, VMBuilder}, vsock::{ConnectionDispatcher, ConnectionDispatcherError}};
+use protocol::RealmInfo;
 
 #[derive(Error, Debug)]
 pub enum RealmError {

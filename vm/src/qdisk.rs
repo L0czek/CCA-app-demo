@@ -78,7 +78,7 @@ impl QEMUDisk {
              let mut gpt = GptConfig::new()
                  .writable(true)
                  .initialized(false)
-                 .logical_block_size(gpt::disk::LogicalBlockSize::Lb4096)
+                 .logical_block_size(gpt::disk::LogicalBlockSize::Lb512)
                  .create_from_device(Box::new(&mut file), None)
                  .map_err(QEMUDiskError::GptOpenError)?;
 
@@ -93,7 +93,7 @@ impl QEMUDisk {
 
               gpt.add_partition(
                   "disk",
-                  free_sectors[0].1 * 4096,
+                  free_sectors[0].1 * 512,
                   partition_types::LINUX_FS,
                   0,
                   None
@@ -107,7 +107,7 @@ impl QEMUDisk {
         let gpt = GptConfig::new()
             .writable(false)
             .initialized(true)
-            .logical_block_size(gpt::disk::LogicalBlockSize::Lb4096)
+            .logical_block_size(gpt::disk::LogicalBlockSize::Lb512)
             .open(&path)
             .map_err(QEMUDiskError::DiskFileOpenError)?;
 
