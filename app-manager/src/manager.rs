@@ -1,7 +1,11 @@
+use std::{collections::HashMap, fs::create_dir};
+
 use thiserror::Error;
 use vsock::{VsockAddr, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST, VMADDR_CID_LOCAL};
-use log::debug;
-use crate::protocol::RealmInfo;
+use log::{debug, info};
+use protocol::RealmInfo;
+
+use crate::{app::{Application, ApplicationError}, config::Config, diskmanager::{DiskManager, DiskManagerError}, dmcrypt::{DmCrypt, DmCryptError}};
 
 #[derive(Error, Debug)]
 pub enum AppManagerError {
@@ -9,22 +13,75 @@ pub enum AppManagerError {
     ConnectionFailed(#[source] std::io::Error),
 
     #[error("Protocol error")]
-    ProtocolError(#[from] serde_json::Error)
+    ProtocolError(#[from] serde_json::Error),
+
+    #[error("ApplicationError")]
+    AppError(#[from] ApplicationError),
+
+    #[error("Disk manager error")]
+    DiskManager(#[from] DiskManagerError),
+
+    #[error("DmCrypt Error")]
+    DmCryptError(#[from] DmCryptError),
+
+    #[error("Workdir creation error")]
+    WorkdirCreation(#[source] std::io::Error)
+}
+
+pub struct AppManagerCtx {
+    pub disks: DiskManager,
+    pub dmcrypt: DmCrypt
 }
 
 pub struct AppManager {
+    ctx: AppManagerCtx,
+    config: Config,
+    stream: VsockStream,
+    apps: HashMap<String, Application>
 }
 
 impl AppManager {
-    pub fn connect(port: u32) -> Result<(), AppManagerError> {
+    pub fn setup(config: Config) -> Result<Self, AppManagerError> {
+        if !config.workdir.exists() {
+            create_dir(&config.workdir).map_err(AppManagerError::WorkdirCreation)?;
+        }
+
         let mut stream = VsockStream::connect(
-            &VsockAddr::new(VMADDR_CID_HOST, port)
+            &VsockAddr::new(VMADDR_CID_HOST, config.vsock_port)
         ).map_err(AppManagerError::ConnectionFailed)?;
 
-        let manager = Self {};
+        debug!("Listing available block devices");
+        let disks = DiskManager::available()?;
 
-        let info: RealmInfo = serde_json::from_reader(&mut stream)?;
-        debug!("Received realminfo: {:#?}", info);
+        debug!("Setting up DmCrypt");
+        let dmcrypt = DmCrypt::init()?;
+
+        let manager = Self {
+            ctx: AppManagerCtx { disks, dmcrypt },
+            config,
+            stream,
+            apps: HashMap::new()
+        };
+
+        Ok(manager)
+    }
+
+    pub fn read_provision_info(&mut self) -> Result<(), AppManagerError> {
+        let info: RealmInfo = serde_json::from_reader(&mut self.stream)
+            .map_err(AppManagerError::ProtocolError)?;
+
+        debug!("Received RealmInfo: {:#?}", info);
+
+        for (name, info) in info.apps.iter() {
+            let workdir = self.config.workdir.join(name);
+            self.apps.insert(name.clone(), Application::new(workdir, info.clone())?);
+            info!("Added application: {}", name);
+        }
+
+        Ok(())
+    }
+
+    pub fn mount_main_storage(&mut self) -> Result<(), AppManagerError> {
 
         Ok(())
     }

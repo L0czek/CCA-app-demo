@@ -11,7 +11,6 @@ use tokio::{join, select, signal::unix::{signal, SignalKind}, try_join};
 mod app;
 mod interface;
 mod daemon;
-mod protocol;
 mod realm;
 mod qemu;
 mod qdisk;

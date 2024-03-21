@@ -6,9 +6,14 @@ edition = "2021"
 [dependencies]
 anyhow = "1.0.81"
 env_logger = "0.11.3"
+gpt = "3.1.0"
 log = "0.4.21"
 serde = { version = "1.0.197", features = ["derive", "alloc"] }
 serde_json = { version = "1.0.114", features = ["alloc"] }
 thiserror = "1.0.58"
 uuid = { version = "1.7.0", features = ["serde"] }
 vsock = "0.4.0"
+devicemapper = "0.34.1"
+hex = "0.4.3"
+protocol = { path = "../protocol" }
+serde_yaml = "0.9.33"
