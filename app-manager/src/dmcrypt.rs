@@ -1,6 +1,7 @@
 use std::{fmt::{Debug, Display}, path::PathBuf};
 
 use devicemapper::{DevId, DeviceInfo, DmError, DmFlags, DmName, DmOptions, DM};
+use serde::Deserialize;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -27,6 +28,7 @@ pub enum DmCryptError {
     SuspendError(#[source] DmError)
 }
 
+#[derive(Deserialize, Debug)]
 pub enum Cipher {
     Aes,
     Twofish,
@@ -43,6 +45,7 @@ impl Display for Cipher {
     }
 }
 
+#[derive(Deserialize, Debug)]
 pub enum HashAlgo {
     Sha256
 }
@@ -55,6 +58,7 @@ impl Display for HashAlgo {
     }
 }
 
+#[derive(Deserialize, Debug)]
 pub enum IvMode {
     Plain,
     Plain64,
@@ -71,6 +75,7 @@ impl Display for IvMode {
     }
 }
 
+#[derive(Deserialize, Debug)]
 pub enum BlockMode {
     Cbc,
     Xts
@@ -122,6 +127,7 @@ impl Display for Key {
     }
 }
 
+#[derive(Deserialize, Debug)]
 pub struct CryptoParams {
     pub cipher: Cipher,
     pub iv_mode: IvMode,
@@ -130,11 +136,12 @@ pub struct CryptoParams {
     pub additional_options: Option<Vec<String>>
 }
 
-pub struct DmCryptTable {
-    start: u64,
-    len: u64,
-    params: CryptoParams,
-    offset: u64
+#[derive(Debug)]
+pub struct DmCryptTable<'a> {
+    pub start: u64,
+    pub len: u64,
+    pub params: &'a CryptoParams,
+    pub offset: u64
 }
 
 pub struct CryptDevice<'a> {
@@ -162,7 +169,7 @@ impl<'a> CryptDevice<'a> {
             entry.offset
         );
 
-        if let Some(opts) = entry.params.additional_options {
+        if let Some(opts) = &entry.params.additional_options {
             params.push_str(format!("{} {}", opts.len(), opts.join(" ")).as_str());
         }
 

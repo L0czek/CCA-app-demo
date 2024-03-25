@@ -101,11 +101,13 @@ impl Realm {
     }
 
     fn configure(&self, builder: &mut dyn VMBuilder) -> Result<(), RealmError> {
-        let log = self.workdir.join("console.log");
-        builder.stdout(
-            &log.to_str()
-                .ok_or(RealmError::PathDecodingError(log.clone()))?
-        );
+        // let log = self.workdir.join("console.log");
+        // builder.stdout(
+        //     &log.to_str()
+        //         .ok_or(RealmError::PathDecodingError(log.clone()))?
+        // );
+        builder.arg(&"-serial");
+        builder.arg(&"tcp:localhost:1337");
 
 
         builder.cpu(&self.config.cpu);

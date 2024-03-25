@@ -29,5 +29,6 @@ done
 
 export RUST_LOG=debug
 setsid cttyhack sh -c "exec $EXEC </dev/$CONSOLE >/dev/$CONSOLE 2>&1";
+setsid cttyhack sh -c "exec sh </dev/$CONSOLE >/dev/$CONSOLE 2>&1";
 
 poweroff -f
