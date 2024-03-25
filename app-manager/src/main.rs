@@ -12,6 +12,11 @@ mod manager;
 static CONFIG: &'static str = r"
 workdir: /workdir
 vsock_port: 1337
+crypto:
+  cipher: Aes
+  iv_mode: Plain
+  block_mode: Cbc
+  iv_offset: 0
 ";
 
 fn main() -> anyhow::Result<()> {
@@ -26,6 +31,9 @@ fn main() -> anyhow::Result<()> {
 
     info!("Loading realm info from host");
     manager.read_provision_info()?;
+
+    info!("Mounting applications main storage");
+    manager.mount_main_storage()?;
 
     Ok(())
 }

@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fs::File, io::{BufRead, BufReader}, path::PathBuf, str::FromStr};
+use std::{collections::HashMap, fs::File, io::{BufRead, BufReader, Read}, path::{Path, PathBuf}, str::FromStr};
 use gpt::GptConfig;
 use log::{debug, info};
 use thiserror::Error;
@@ -10,11 +10,48 @@ pub enum DiskManagerError {
     ProcPartitions(#[source] std::io::Error),
 
     #[error("Invalid /proc/partition format in line `{0}`")]
-    ProcPartitionsFormat(String)
+    ProcPartitionsFormat(String),
+
+    #[error("Cannot read partition size from sysfs")]
+    SizeReadError(#[source] std::io::Error),
+
+    #[error("{0:?} is not a valid size")]
+    InvalidSize(String)
+}
+
+pub struct Partition {
+    name: String
+}
+
+impl Partition {
+    pub fn new(name: String) -> Self {
+        Self { name }
+    }
+
+    pub fn path(&self) -> PathBuf {
+        PathBuf::from_str("/dev").unwrap()
+            .join(&self.name)
+    }
+
+    pub fn sz(&self) -> Result<u64, DiskManagerError> {
+        let sysfs_path = Path::new("/sys/class/block/")
+            .join(&self.name)
+            .join("size");
+
+        let mut file = File::open(sysfs_path)
+            .map_err(DiskManagerError::SizeReadError)?;
+
+        let mut sz = String::new();
+        file.read_to_string(&mut sz)
+            .map_err(DiskManagerError::SizeReadError)?;
+        let sz = sz.trim();
+
+        Ok(u64::from_str(sz).map_err(|_| DiskManagerError::InvalidSize(sz.to_owned()))?)
+    }
 }
 
 pub struct DiskManager {
-    partitions: HashMap<Uuid, PathBuf>
+    partitions: HashMap<Uuid, Partition>
 }
 
 impl DiskManager {
@@ -47,12 +84,10 @@ impl DiskManager {
 
             if let Ok(disk) = gpt {
                 for (id, partition) in disk.partitions().iter() {
-                    let mut path = diskpath.clone().into_os_string();
-                    path.push(id.to_string());
-                    let uuid = partition.part_guid;
-
-                    info!("Adding new partition path `{:?}`, uuid: {}", path, uuid);
-                    manager.partitions.insert(uuid, path.into());
+                    let name = format!("{}{}", devname, id);
+                    let uuid = partition.part_guid.clone();
+                    info!("Adding new partition {}, uuid: {}", name, uuid);
+                    manager.partitions.insert(uuid, Partition::new(name));
                 }
             }
         }
@@ -60,7 +95,7 @@ impl DiskManager {
         Ok(manager)
     }
 
-    pub fn partition_path_by_uuid(&self, uuid: &Uuid) -> Option<&PathBuf> {
+    pub fn partition_path_by_uuid(&self, uuid: &Uuid) -> Option<&Partition> {
         self.partitions.get(uuid)
     }
 }
