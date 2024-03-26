@@ -1,31 +1,18 @@
 use std::{fmt::{Debug, Display}, path::PathBuf};
 
-use devicemapper::{DevId, DeviceInfo, DmError, DmFlags, DmName, DmOptions, DM};
+use devicemapper::{DevId, DeviceInfo, DmError, DmFlags, DmOptions, DM};
 use serde::Deserialize;
 use thiserror::Error;
 
+use crate::dm::{DeviceHandle, DeviceHandleWrapper, DeviceMapperError};
+
 #[derive(Error, Debug)]
 pub enum DmCryptError {
-    #[error("Unable to open device mapper")]
-    OpenError(#[source] DmError),
-
-    #[error("`{0}` is not a valid device name acording to device mapper, error: {1}")]
-    InvalidName(String, #[source] DmError),
-
-    #[error("Cannot create virtual mapping device named: {0}, error: {1}")]
-    CreateError(String, #[source] DmError),
-
     #[error("Cannot convert path `{0:?}` to string")]
     PathConversion(PathBuf),
 
-    #[error("Table load error")]
-    TableLoad(#[source] DmError),
-
-    #[error("Resume error")]
-    ResumeError(#[source] DmError),
-
-    #[error("Suspend Error")]
-    SuspendError(#[source] DmError)
+    #[error("Device mapper error")]
+    DeviceMapperError(#[from] DeviceMapperError)
 }
 
 #[derive(Deserialize, Debug)]
@@ -144,21 +131,10 @@ pub struct DmCryptTable<'a> {
     pub offset: u64
 }
 
-pub struct CryptDevice<'a> {
-    dm: &'a DM,
-    info: DeviceInfo
-}
+pub struct CryptDevice(pub DeviceHandle);
 
-impl<'a> CryptDevice<'a> {
-    pub fn new(dm: &'a DM, info: DeviceInfo) -> Self {
-        Self {
-            dm,
-            info
-        }
-    }
-
+impl CryptDevice {
     pub fn load(&self, entry: DmCryptTable, devpath: &PathBuf, key: &Key, options: Option<DmOptions>) -> Result<(), DmCryptError> {
-        let id = DevId::Name(self.info.name().unwrap());
         let mut params = format!("{}-{}-{} {} {} {} {}",
             entry.params.cipher,
             entry.params.block_mode,
@@ -180,50 +156,14 @@ impl<'a> CryptDevice<'a> {
             params
         )];
 
-        let _ = self.dm.table_load(&id, &table, options.unwrap_or(DmOptions::default()))
-            .map_err(DmCryptError::TableLoad)?;
-
-        Ok(())
-    }
-
-    pub fn resume(&self) -> Result<(), DmCryptError> {
-        let id = DevId::Name(self.info.name().unwrap());
-
-        let _ = self.dm.device_suspend(&id, DmOptions::default())
-            .map_err(DmCryptError::ResumeError)?;
-
-        Ok(())
-    }
-
-    pub fn suspend(&self) -> Result<(), DmCryptError> {
-        let id = DevId::Name(self.info.name().unwrap());
-
-        let _ = self.dm.device_suspend(&id, DmOptions::default().set_flags(DmFlags::DM_SUSPEND))
-            .map_err(DmCryptError::SuspendError)?;
+        let _ = self.0.table_load(&table, options)?;
 
         Ok(())
     }
 }
 
-pub struct DmCrypt {
-    dm: DM
-}
-
-impl DmCrypt {
-    pub fn init() -> Result<Self, DmCryptError> {
-        Ok(Self {
-            dm: DM::new().map_err(DmCryptError::OpenError)?
-        })
+impl DeviceHandleWrapper for CryptDevice {
+    fn dm_handle(&self) -> &crate::dm::DeviceHandle {
+        &self.0
     }
-
-    pub fn create(&self, name: &String, options: Option<DmOptions>) -> Result<CryptDevice<'_>, DmCryptError> {
-        let name = DmName::new(&name)
-            .map_err(|e| DmCryptError::InvalidName(name.clone(), e))?;
-
-        let info = self.dm.device_create(name, None, options.unwrap_or(DmOptions::default()))
-            .map_err(|e| DmCryptError::CreateError(name.to_string(), e))?;
-
-        Ok(CryptDevice::new(&self.dm, info))
-    }
-
 }

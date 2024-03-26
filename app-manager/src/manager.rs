@@ -5,7 +5,7 @@ use vsock::{VsockAddr, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST, VMADDR_CID_
 use log::{debug, info};
 use protocol::RealmInfo;
 
-use crate::{app::{Application, ApplicationError}, config::Config, diskmanager::{DiskManager, DiskManagerError}, dmcrypt::{DmCrypt, DmCryptError, Key}, keys::{KeyManager, KeyManagerError}};
+use crate::{app::{Application, ApplicationError}, config::Config, diskmanager::{DiskManager, DiskManagerError}, dm::{DeviceMapper, DeviceMapperError}, dmcrypt::{DmCryptError, Key}, keys::{KeyManager, KeyManagerError}};
 
 #[derive(Error, Debug)]
 pub enum AppManagerError {
@@ -28,23 +28,26 @@ pub enum AppManagerError {
     KeyManagerError(#[from] KeyManagerError),
 
     #[error("Workdir creation error")]
-    WorkdirCreation(#[source] std::io::Error)
+    WorkdirCreation(#[source] std::io::Error),
+
+    #[error("Device mapper error")]
+    DeviceMapperError(#[from] DeviceMapperError)
 }
 
 pub struct AppManagerCtx {
     pub disks: DiskManager,
-    pub dmcrypt: DmCrypt,
+    pub devicemapper: DeviceMapper,
     pub keymanager: KeyManager
 }
 
-pub struct AppManager<'a> {
+pub struct AppManager {
     ctx: Arc<AppManagerCtx>,
     config: Config,
     stream: VsockStream,
-    apps: HashMap<String, Application<'a>>
+    apps: HashMap<String, Application>
 }
 
-impl<'a> AppManager<'a> {
+impl AppManager {
     pub fn setup(config: Config) -> Result<Self, AppManagerError> {
         if !config.workdir.exists() {
             create_dir(&config.workdir).map_err(AppManagerError::WorkdirCreation)?;
@@ -58,13 +61,13 @@ impl<'a> AppManager<'a> {
         let disks = DiskManager::available()?;
 
         debug!("Setting up DmCrypt");
-        let dmcrypt = DmCrypt::init()?;
+        let devicemapper = DeviceMapper::init()?;
 
         debug!("Setting up key manager");
         let keymanager = KeyManager::new()?;
 
         let manager = Self {
-            ctx: Arc::new(AppManagerCtx { disks, dmcrypt, keymanager }),
+            ctx: Arc::new(AppManagerCtx { disks, devicemapper, keymanager }),
             config,
             stream,
             apps: HashMap::new()
@@ -88,13 +91,23 @@ impl<'a> AppManager<'a> {
         Ok(())
     }
 
-    pub fn mount_main_storage(&'a mut self) -> Result<(), AppManagerError> {
+    pub fn decrypt_main_storage(&mut self) -> Result<(), AppManagerError> {
         let row_realm_sealing_key = self.ctx.keymanager.realm_sealing_key()?;
 
         let key = Key::Raw(row_realm_sealing_key.to_vec());
         for (name, app) in self.apps.iter_mut() {
-            app.mount_main_storage(&self.config.crypto, &key)?;
+            info!("Decrypting main storage for {}", name);
+            app.decrypt_main_storage(&self.config.crypto, &key)?;
         }
         Ok(())
-   }
+    }
+
+    pub fn provision(&self) -> Result<(), AppManagerError> {
+        for (name, app) in self.apps.iter() {
+            info!("Provisioning {}", name);
+            app.provision()?;
+        }
+
+        Ok(())
+    }
 }

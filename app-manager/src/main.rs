@@ -5,9 +5,12 @@ use crate::{config::Config, manager::AppManager};
 mod app;
 mod config;
 mod diskmanager;
+mod dm;
 mod dmcrypt;
+mod dmverity;
 mod keys;
 mod manager;
+mod utils;
 
 static CONFIG: &'static str = r"
 workdir: /workdir
@@ -32,8 +35,11 @@ fn main() -> anyhow::Result<()> {
     info!("Loading realm info from host");
     manager.read_provision_info()?;
 
-    info!("Mounting applications main storage");
-    manager.mount_main_storage()?;
+    info!("Decrypting applications main storage");
+    manager.decrypt_main_storage()?;
+
+    info!("Provisioning...");
+    manager.provision()?;
 
     Ok(())
 }
