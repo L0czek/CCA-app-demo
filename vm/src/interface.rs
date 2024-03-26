@@ -76,6 +76,10 @@ pub enum Command {
         /// Secure storage size in MB
         #[clap(short, long, default_value_t = 1024)]
         secure_storage_size_mb: usize,
+
+        /// Provision from
+        #[clap(short, long)]
+        provision_from: Option<String>
     },
 
     /// Launch a configured realm
@@ -83,7 +87,7 @@ pub enum Command {
         /// Realm id to launch
         #[clap(short, long)]
         id: String
-    }
+    },
 }
 
 #[derive(Debug)]
@@ -243,8 +247,8 @@ impl ClientHandler {
 
             Command::ListRealms {  } => self.handle_list_realms(),
 
-            Command::CreateApplication { id, realm_id, main_storage_size_mb, secure_storage_size_mb }
-                => self.handle_create_application(id, realm_id, ApplicationConfig { main_storage_size_mb, secure_storage_size_mb }).await,
+            Command::CreateApplication { id, realm_id, main_storage_size_mb, secure_storage_size_mb, provision_from }
+                => self.handle_create_application(id, realm_id, ApplicationConfig { main_storage_size_mb, secure_storage_size_mb, provision_from }).await,
 
             Command::LaunchRealm { id } => self.handle_launch_realm(id),
         }

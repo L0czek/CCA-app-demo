@@ -4,9 +4,16 @@ use uuid::Uuid;
 use serde::{Serialize, Deserialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct ProvisionInfo {
+
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ApplicationInfo {
     pub main_partition_uuid: Uuid,
-    pub secure_partition_uuid: Uuid
+    pub secure_partition_uuid: Uuid,
+
+    pub provision_info: Option<ProvisionInfo>
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]

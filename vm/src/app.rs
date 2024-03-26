@@ -4,7 +4,7 @@ use thiserror::Error;
 use tokio::task::JoinError;
 
 use crate::{qdisk::{QEMUDisk, QEMUDiskError}, qemu::VMBuilder};
-use protocol::ApplicationInfo;
+use protocol::{ApplicationInfo, ProvisionInfo};
 
 #[derive(Error, Debug)]
 pub enum ApplicationError {
@@ -24,7 +24,8 @@ pub enum ApplicationError {
 #[derive(Debug)]
 pub struct ApplicationConfig {
     pub main_storage_size_mb: usize,
-    pub secure_storage_size_mb: usize
+    pub secure_storage_size_mb: usize,
+    pub provision_from: Option<String>
 }
 
 #[derive(Debug)]
@@ -79,7 +80,8 @@ impl Application {
     pub fn application_info(&self) -> ApplicationInfo {
         ApplicationInfo {
             main_partition_uuid: self.main_storage.part_uuid().clone(),
-            secure_partition_uuid: self.secure_storage.part_uuid().clone()
+            secure_partition_uuid: self.secure_storage.part_uuid().clone(),
+            provision_info: self.config.provision_from.as_ref().map(|_| ProvisionInfo {})
         }
     }
 }

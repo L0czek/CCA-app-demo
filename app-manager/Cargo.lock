@@ -75,6 +75,7 @@ dependencies = [
  "gpt",
  "hex",
  "log",
+ "nix 0.28.0",
  "protocol",
  "serde",
  "serde_json",
@@ -132,6 +133,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "cfg_aliases"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fd16c4719339c4530435d38e511904438d07cce7950afa3718a84ac36c10e89e"
+
+[[package]]
 name = "clang-sys"
 version = "1.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -172,7 +179,7 @@ dependencies = [
  "env_logger 0.10.2",
  "lazy_static",
  "log",
- "nix",
+ "nix 0.27.1",
  "rand",
  "retry",
  "semver",
@@ -388,6 +395,18 @@ dependencies = [
  "cfg-if",
  "libc",
  "memoffset",
+]
+
+[[package]]
+name = "nix"
+version = "0.28.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ab2156c4fce2f8df6c499cc1c763e4394b7482525bf2a9701c9d79d215f519e4"
+dependencies = [
+ "bitflags",
+ "cfg-if",
+ "cfg_aliases",
+ "libc",
 ]
 
 [[package]]
@@ -640,7 +659,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dfb6e7a74830912f1f4a7655227c9ded1ea4e9136676311fedf54bedb412f35"
 dependencies = [
  "libc",
- "nix",
+ "nix 0.27.1",
 ]
 
 [[package]]
