@@ -283,7 +283,7 @@ impl ClientHandler {
             .ok_or(ClientHandlerError::RealmDoesNotExist(id))?;
 
         let mut runner = QEMURunner::new();
-        // runner.arg(&"-nographic");
+        runner.arg(&"-nographic");
         realm.launch(&mut runner, self.context.clone(), &mut self.handler_threads)?;
 
         Ok(CommandResult::RealmLaunched)

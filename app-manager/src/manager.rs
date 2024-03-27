@@ -93,8 +93,8 @@ impl AppManager {
 
     pub fn decrypt_main_storage(&mut self) -> Result<(), AppManagerError> {
         let row_realm_sealing_key = self.ctx.keymanager.realm_sealing_key()?;
-
         let key = Key::Raw(row_realm_sealing_key.to_vec());
+
         for (name, app) in self.apps.iter_mut() {
             info!("Decrypting main storage for {}", name);
             app.decrypt_main_storage(&self.config.crypto, &key)?;
@@ -102,10 +102,41 @@ impl AppManager {
         Ok(())
     }
 
-    pub fn provision(&self) -> Result<(), AppManagerError> {
+    pub fn provision_app_image(&self) -> Result<(), AppManagerError> {
         for (name, app) in self.apps.iter() {
-            info!("Provisioning {}", name);
-            app.provision()?;
+            info!("Provisioning image for {}", name);
+            app.provision_app_image()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn decrypt_secure_storage(&mut self) -> Result<(), AppManagerError> {
+        let row_realm_sealing_key = self.ctx.keymanager.realm_sealing_key()?;
+        let key = Key::Raw(row_realm_sealing_key.to_vec());
+        // TODO: add key sealing here later
+
+        for (name, app) in self.apps.iter_mut() {
+            info!("Decrypting secure storage {}", name);
+            app.decrypt_secure_storage(&self.config.crypto, &key)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn provision_secure_storage(&self) -> Result<(), AppManagerError> {
+        for (name, app) in self.apps.iter() {
+            info!("Provisioning secure memory for {}", name);
+            app.provision_secure_memory()?;
+        }
+
+        Ok(())
+    }
+
+    pub fn mount_overlay(&self) -> Result<(), AppManagerError> {
+        for (name, app) in self.apps.iter() {
+            info!("Mounting overlay for {}", name);
+            app.mount_overlay()?;
         }
 
         Ok(())
