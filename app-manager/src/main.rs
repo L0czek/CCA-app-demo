@@ -39,7 +39,16 @@ fn main() -> anyhow::Result<()> {
     manager.decrypt_main_storage()?;
 
     info!("Provisioning...");
-    manager.provision()?;
+    manager.provision_app_image()?;
+
+    info!("Decrypting secure storage");
+    manager.decrypt_secure_storage()?;
+
+    info!("Provisioning secure storage");
+    manager.provision_secure_storage()?;
+
+    info!("Mounting overlays");
+    manager.mount_overlay()?;
 
     Ok(())
 }
