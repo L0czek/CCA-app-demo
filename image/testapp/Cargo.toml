@@ -1,0 +1,13 @@
+[package]
+name = "testapp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+env_logger = "0.11.3"
+log = "0.4.21"
+handler = { path = "../handler" }
+tokio = { version = "1.36.0", features = ["io-util", "sync", "rt", "rt-multi-thread", "fs", "signal", "macros"] }
+thiserror = "1.0.58"
+anyhow = { version = "1.0.81", features = ["backtrace"] }
+hex = "0.4.3"
