@@ -1,0 +1,12 @@
+[package]
+name = "handler"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+log = "0.4.21"
+pin-project = "1.1.5"
+serde = { version = "1.0.197", features = ["derive", "alloc"] }
+sha2 = "0.10.8"
+thiserror = "1.0.58"
+tokio = { version = "1.36.0", features = ["io-util", "sync"] }
