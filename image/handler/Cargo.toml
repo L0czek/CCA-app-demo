@@ -4,9 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+chrono = { version = "0.4.37", features = ["alloc", "serde"] }
+hex = "0.4.3"
 log = "0.4.21"
 pin-project = "1.1.5"
 serde = { version = "1.0.197", features = ["derive", "alloc"] }
 sha2 = "0.10.8"
 thiserror = "1.0.58"
 tokio = { version = "1.36.0", features = ["io-util", "sync"] }
+tokio-tar = "0.3.1"
