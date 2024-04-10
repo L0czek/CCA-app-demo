@@ -1,12 +1,8 @@
 use pin_project::pin_project;
 use sha2::{digest::DynDigest, Digest, Sha256, Sha512};
 use tokio::io::AsyncRead;
-
-#[derive(Debug, Copy, Clone)]
-pub enum HashType {
-    Sha256,
-    Sha512
-}
+use tokio::io::AsyncReadExt;
+use crate::common::HashType;
 
 #[pin_project]
 pub struct Hasher<T: AsyncRead> {

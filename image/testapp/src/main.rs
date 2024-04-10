@@ -1,17 +1,17 @@
-use handler::Hasher;
+use std::path::{Path, PathBuf};
+
+use handler::{Hasher, InstallerTrait};
 use tokio::{fs::File, io::AsyncReadExt};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let file = File::open("./dupa").await?;
-
-    let mut hasher = Hasher::new(handler::HashType::Sha256, file);
-
-    let mut cnt = String::new();
-    hasher.read_to_string(&mut cnt).await?;
-
-    println!("cnt: {:?}", cnt);
-    println!("hash: {:?}", hex::encode(hasher.finalize()));
+    env_logger::init();
+    let installer = handler::Installer::target(&Path::new("./root"));
+    let mut file = File::open("./e.tar").await?;
+    // let mut launcher = installer.install(&mut file).await?;
+    let mut launcher = installer.validate().await?;
+    let handle = launcher.launch()?;
+    handle.await??;
 
     Ok(())
 }
