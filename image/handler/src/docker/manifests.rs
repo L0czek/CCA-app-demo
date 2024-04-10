@@ -1,8 +1,12 @@
+use std::collections::{HashMap, HashSet};
+use std::ffi::OsString;
 use std::fmt::Display;
+use std::path::PathBuf;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde::de::Error;
+use crate::common::HashType;
 
 #[derive(Serialize, Deserialize, Debug)]
 pub enum MediaType {
@@ -29,24 +33,9 @@ pub enum MediaType {
 }
 
 #[derive(Debug)]
-pub enum HashType {
-    Sha256,
-    Sha512
-}
-
-impl Display for HashType {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            HashType::Sha256 => write!(f, "sha256"),
-            HashType::Sha512 => write!(f, "sha512")
-        }
-    }
-}
-
-#[derive(Debug)]
 pub struct Digest {
     pub ty: HashType,
-    pub val: Vec<u8>
+    pub val: Box<[u8]>
 }
 
 impl Serialize for Digest {
@@ -79,7 +68,7 @@ impl<'de> Deserialize<'de> for Digest {
 
         Ok(Self {
             ty,
-            val
+            val: val.into()
         })
     }
 }
@@ -105,16 +94,88 @@ pub struct Manifest {
     pub layers: Vec<Object>
 }
 
+#[derive(Debug)]
+pub enum Id {
+    Name(String),
+    Id(u32)
+}
+
+impl From<&str> for Id {
+    fn from(value: &str) -> Self {
+        if let Ok(id) = u32::from_str_radix(value, 10) {
+            Self::Id(id)
+        } else {
+            Self::Name(value.to_owned())
+        }
+    }
+}
+
+impl Display for Id {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Id::Name(v) => f.write_str(&v),
+            Id::Id(v) => write!(f, "{}", v)
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct UserConfig {
+    pub uid: Id,
+    pub gid: Option<Id>
+}
+
+impl<'de> Deserialize<'de> for UserConfig {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+        where
+            D: serde::Deserializer<'de> {
+        let v = String::deserialize(deserializer)?;
+
+        if let Some((uid, gid)) = v.split_once(":") {
+            Ok(Self {
+                uid: uid.into(),
+                gid: Some(gid.into())
+            })
+        } else {
+            Ok(Self {
+                uid: v.as_str().into(),
+                gid: None
+            })
+        }
+    }
+}
+
+impl Serialize for UserConfig {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+        where
+            S: serde::Serializer {
+        if let Some(gid) = self.gid.as_ref() {
+            serializer.serialize_str(format!("{}:{}", self.uid, gid).as_str())
+        } else {
+            serializer.serialize_str(format!("{}", self.uid).as_str())
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct LaunchConfig {
     #[serde(rename = "Env")]
     pub env: Vec<String>,
 
-    #[serde(rename = "Cmd")]
-    pub cmd: Option<Vec<String>>,
+    #[serde(rename = "Cmd", default)]
+    pub cmd: Vec<String>,
+
+    #[serde(rename = "Entrypoint")]
+    pub entrypoint: Option<Vec<String>>,
+
+    #[serde(rename = "User")]
+    pub user: Option<UserConfig>,
+
+    #[serde(rename = "ExposedPorts")]
+    pub ports: Option<HashMap<String, HashMap<(), ()>>>,
 
     #[serde(rename = "WorkingDir")]
-    pub pwd: String,
+    pub pwd: Option<String>,
 
     #[serde(rename = "ArgsEscaped")]
     pub args_escaped: bool,
@@ -127,7 +188,11 @@ pub struct LaunchConfig {
 pub struct HistoryItem {
     pub created: DateTime<Utc>,
     pub created_by: String,
-    pub comment: Vec<String>,
+
+    #[serde(default)]
+    pub comment: String,
+
+    #[serde(default)]
     pub empty_layer: bool
 }
 
@@ -151,5 +216,16 @@ pub struct ContainerConfig {
     pub config: LaunchConfig,
     pub history: Vec<HistoryItem>,
     pub rootfs: RootFs
+}
 
+#[derive(Serialize, Deserialize, Debug)]
+pub struct ImageManifest {
+    #[serde(rename = "Config")]
+    pub config: String,
+
+    #[serde(rename = "RepoTags")]
+    pub tags: Vec<String>,
+
+    #[serde(rename = "Layers")]
+    pub layers: Vec<PathBuf>
 }

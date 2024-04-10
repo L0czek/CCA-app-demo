@@ -9,7 +9,9 @@ hex = "0.4.3"
 log = "0.4.21"
 pin-project = "1.1.5"
 serde = { version = "1.0.197", features = ["derive", "alloc"] }
+serde_json = { version = "1.0.115", features = ["alloc"] }
 sha2 = "0.10.8"
 thiserror = "1.0.58"
-tokio = { version = "1.36.0", features = ["io-util", "sync"] }
+tokio = { version = "1.36.0", features = ["io-util", "sync", "time", "process", "macros"] }
 tokio-tar = "0.3.1"
+nix = { version = "0.28.0", features = ["user"] }
