@@ -22,7 +22,8 @@ crypto:
   iv_offset: 0
 ";
 
-fn main() -> anyhow::Result<()> {
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
     env_logger::init();
 
     let config: Config = serde_yaml::from_str(CONFIG)?;
@@ -30,7 +31,7 @@ fn main() -> anyhow::Result<()> {
 
     info!("Starting app-manager");
 
-    let mut manager = AppManager::setup(config)?;
+    let mut manager = AppManager::setup(config).await?;
 
     info!("Loading realm info from host");
     manager.read_provision_info()?;

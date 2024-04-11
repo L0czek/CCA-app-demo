@@ -12,9 +12,10 @@ serde = { version = "1.0.197", features = ["derive", "alloc"] }
 serde_json = { version = "1.0.114", features = ["alloc"] }
 thiserror = "1.0.58"
 uuid = { version = "1.7.0", features = ["serde"] }
-vsock = "0.4.0"
 devicemapper = { path = "../thirdparty/devicemapper-rs" }
 hex = "0.4.3"
 protocol = { path = "../protocol" }
 serde_yaml = "0.9.33"
 nix = "0.28.0"
+tokio = { version = "1.37.0", features = ["io-util", "sync", "rt", "rt-multi-thread", "fs", "macros"] }
+tokio-vsock = "0.5.0"
