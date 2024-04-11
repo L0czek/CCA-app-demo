@@ -1,4 +1,5 @@
 #![feature(result_flattening)]
+#![feature(async_fn_in_trait)]
 
 mod common;
 mod hasher;
@@ -7,7 +8,10 @@ mod util;
 
 use std::future::Future;
 use std::path::Path;
+use std::process::ExitCode;
+use std::process::ExitStatus;
 
+use async_trait::async_trait;
 pub use hasher::Hasher;
 pub use common::HashType;
 use thiserror::Error;
@@ -39,7 +43,13 @@ pub trait InstallerTrait {
     fn validate(&self) -> impl Future<Output = Result<Box<dyn Launcher>>>;
 }
 
+
+
+#[async_trait]
 pub trait Launcher {
     fn launch(&mut self) -> Result<JoinHandle<Result<()>>>;
+    async fn stop(&mut self) -> Result<ExitStatus>;
+    async fn kill(&mut self) -> Result<ExitStatus>;
+    async fn wait(&mut self) -> Result<ExitStatus>;
 }
 

@@ -1,8 +1,9 @@
-use std::{env::set_current_dir, ffi::OsString, os::unix::fs::chroot, path::PathBuf, process::Stdio};
+use std::{env::set_current_dir, ffi::OsString, os::unix::fs::chroot, path::PathBuf, process::{ExitCode, ExitStatus, Stdio}};
 
-use nix::{unistd::{getgid, getuid, setuid, Gid, Group, Uid, User, setgid}};
+use async_trait::async_trait;
+use nix::{errno::Errno, sys::{self, signal::{self, Signal}}, unistd::{getgid, getuid, setgid, setuid, Gid, Group, Pid, Uid, User}};
 use thiserror::Error;
-use tokio::{io::{AsyncReadExt, BufReader, AsyncBufReadExt}, process::{Child, Command}, select, task};
+use tokio::{io::{AsyncBufReadExt, AsyncReadExt, BufReader}, process::{Child, Command}, select, sync::mpsc::{self, channel, Receiver, Sender}, task};
 use log::info;
 
 use crate::{docker::manifests::UserConfig, ImageError};
@@ -24,7 +25,22 @@ pub enum LauncherError {
     IOReadError(#[source] std::io::Error),
 
     #[error("Error while awaiting the spawned application")]
-    WaitpidError(#[source] std::io::Error)
+    WaitpidError(#[source] std::io::Error),
+
+    #[error("Failed to stop process")]
+    StopError(#[source] Errno),
+
+    #[error("Failed to send request across threads???")]
+    RequestChannelError(#[source] mpsc::error::SendError<Request>),
+
+    #[error("Failed to send response across threads???")]
+    ResponseChannelError(#[source] mpsc::error::SendError<Response>),
+
+    #[error("Channel was closed")]
+    ChannelClosed(),
+
+    #[error("Application is not running")]
+    AppNotRunning()
 }
 
 type Result<V> = std::result::Result<V, LauncherError>;
@@ -35,14 +51,25 @@ impl From<LauncherError> for ImageError {
     }
 }
 
+enum Request {
+    Stop,
+    Kill,
+    Wait
+}
+
+enum Response {
+    Status(ExitStatus)
+}
+
 pub struct Launcher {
     rootfs: PathBuf,
-    conf: ContainerConfig
+    conf: ContainerConfig,
+    txrx: Option<(Sender<Request>, Receiver<Response>)>,
 }
 
 impl Launcher {
     pub fn new(rootfs: PathBuf, config: ContainerConfig) -> Launcher {
-        Self { rootfs, conf: config }
+        Self { rootfs, conf: config, txrx: None }
     }
 
     fn env(&self) -> &Vec<String> {
@@ -85,7 +112,7 @@ impl Launcher {
         }
     }
 
-    async fn handler(mut process: Child) -> Result<()> {
+    async fn handler(mut process: Child, mut tx: Sender<Response>, mut rx: Receiver<Request>) -> Result<()> {
         let mut stdout = BufReader::new(process.stdout.take().unwrap());
         let mut stderr = BufReader::new(process.stderr.take().unwrap());
 
@@ -95,8 +122,29 @@ impl Launcher {
         let mut stdout_line = String::new();
         let mut stderr_line = String::new();
 
+        let pid = Pid::from_raw(process.id().unwrap() as i32);
+
         loop {
             select! {
+                r = rx.recv() => {
+                    if let Some(req) = r {
+                        match req {
+                            Request::Stop => {
+                                signal::kill(pid, Signal::SIGTERM).map_err(LauncherError::StopError)?;
+                            },
+                            Request::Kill => {
+                                signal::kill(pid, Signal::SIGKILL).map_err(LauncherError::StopError)?;
+                            },
+                            Request::Wait => {}
+                        }
+
+                        let status = process.wait().await.map_err(LauncherError::WaitpidError)?;
+                        tx.send(Response::Status(status)).await.map_err(LauncherError::ResponseChannelError)?;
+                    }
+
+                    break;
+                }
+
                 v = stdout.read_line(&mut stdout_line), if stdout_open => {
                     if v.map_err(LauncherError::IOReadError)? == 0 {
                         stdout_open = false;
@@ -125,8 +173,19 @@ impl Launcher {
 
         Ok(())
     }
+
+    async fn send_request(&mut self, req: Request) -> crate::Result<ExitStatus> {
+        if let Some((tx, rx)) = self.txrx.as_mut() {
+            tx.send(req).await.map_err(LauncherError::RequestChannelError)?;
+            let resp = rx.recv().await.ok_or(LauncherError::ChannelClosed())?;
+            Ok(match resp { Response::Status(s) => s })
+        } else {
+            Err(LauncherError::AppNotRunning().into())
+        }
+    }
 }
 
+#[async_trait]
 impl crate::Launcher for Launcher {
     fn launch(&mut self) -> crate::Result<tokio::task::JoinHandle<crate::Result<()>>> {
         let env = self.env();
@@ -177,8 +236,25 @@ impl crate::Launcher for Launcher {
         let process = cmd.spawn()
             .map_err(LauncherError::SpawnError)?;
 
+        let (tx1, rx1) = channel(1);
+        let (tx2, rx2) = channel(1);
+
+        self.txrx = Some((tx1, rx2));
+
         Ok(task::spawn(async move {
-            Ok(Self::handler(process).await?)
+            Ok(Self::handler(process, tx2, rx1).await?)
         }))
+    }
+
+    async fn stop(&mut self) -> crate::Result<ExitStatus> {
+        self.send_request(Request::Stop).await
+    }
+
+    async fn kill(&mut self) -> crate::Result<ExitStatus> {
+        self.send_request(Request::Kill).await
+    }
+
+    async fn wait(&mut self) -> crate::Result<ExitStatus> {
+        self.send_request(Request::Wait).await
     }
 }

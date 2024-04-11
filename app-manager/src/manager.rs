@@ -1,9 +1,10 @@
-use std::{collections::HashMap, fs::create_dir, sync::Arc};
+use std::{collections::HashMap, sync::Arc};
 
 use thiserror::Error;
-use vsock::{VsockAddr, VsockStream, VMADDR_CID_ANY, VMADDR_CID_HOST, VMADDR_CID_LOCAL};
 use log::{debug, info};
 use protocol::RealmInfo;
+use tokio::fs::create_dir;
+use tokio_vsock::{VsockAddr, VsockStream, VMADDR_CID_HOST};
 
 use crate::{app::{Application, ApplicationError}, config::Config, diskmanager::{DiskManager, DiskManagerError}, dm::{DeviceMapper, DeviceMapperError}, dmcrypt::{DmCryptError, Key}, keys::{KeyManager, KeyManagerError}};
 
@@ -48,14 +49,14 @@ pub struct AppManager {
 }
 
 impl AppManager {
-    pub fn setup(config: Config) -> Result<Self, AppManagerError> {
+    pub async fn setup(config: Config) -> Result<Self, AppManagerError> {
         if !config.workdir.exists() {
-            create_dir(&config.workdir).map_err(AppManagerError::WorkdirCreation)?;
+            create_dir(&config.workdir).await.map_err(AppManagerError::WorkdirCreation)?;
         }
 
-        let mut stream = VsockStream::connect(
-            &VsockAddr::new(VMADDR_CID_HOST, config.vsock_port)
-        ).map_err(AppManagerError::ConnectionFailed)?;
+        let stream = VsockStream::connect(
+            VsockAddr::new(VMADDR_CID_HOST, config.vsock_port)
+        ).await.map_err(AppManagerError::ConnectionFailed)?;
 
         debug!("Listing available block devices");
         let disks = DiskManager::available()?;
