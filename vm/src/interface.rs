@@ -88,6 +88,46 @@ pub enum Command {
         #[clap(short, long)]
         id: String
     },
+
+    /// Start a stopped application
+    StartApp {
+        /// Application id
+        #[clap(short, long)]
+        id: String,
+
+        /// Realm id
+        #[clap(short, long)]
+        realm_id: String,
+    },
+
+    /// Terminate a running application
+    TerminateApp {
+        /// Application id
+        #[clap(short, long)]
+        id: String,
+
+        /// Realm id
+        #[clap(short, long)]
+        realm_id: String,
+    },
+
+    /// Kill a running application
+    KillApp {
+        /// Application id
+        #[clap(short, long)]
+        id: String,
+
+        /// Realm id
+        #[clap(short, long)]
+        realm_id: String,
+    },
+
+    /// Shutdown realm
+    Shutdown {
+        /// Realm id
+        #[clap(short, long)]
+        id: String,
+    }
 }
 
 #[derive(Debug)]
@@ -95,7 +135,10 @@ enum CommandResult {
     RealmCreated,
     ApplicationCreated,
     RealmLaunched,
-    Msg(String)
+    Msg(String),
+    ApplicationStarted,
+    ApplicationExited,
+    RealmExited,
 }
 
 impl Display for CommandResult {
@@ -104,7 +147,10 @@ impl Display for CommandResult {
             CommandResult::RealmCreated => write!(f, "RealmCreated"),
             CommandResult::ApplicationCreated => write!(f, "ApplicationCreated"),
             CommandResult::RealmLaunched => write!(f, "RealmLaunched"),
-            CommandResult::Msg(v) => write!(f, "{}", v)
+            CommandResult::Msg(v) => write!(f, "{}", v),
+            CommandResult::ApplicationExited => write!(f, "ApplicationExited"),
+            CommandResult::ApplicationStarted => write!(f, "ApplicationStarted"),
+            CommandResult::RealmExited => write!(f, "RealmExited")
         }
     }
 }
@@ -251,6 +297,10 @@ impl ClientHandler {
                 => self.handle_create_application(id, realm_id, ApplicationConfig { main_storage_size_mb, secure_storage_size_mb, provision_from }).await,
 
             Command::LaunchRealm { id } => self.handle_launch_realm(id),
+            Command::StartApp { id, realm_id } => self.handle_start_app(id, realm_id).await,
+            Command::TerminateApp { id, realm_id } => self.handle_terminate_app(id, realm_id).await,
+            Command::KillApp { id, realm_id } => self.handle_kill_app(id, realm_id).await,
+            Command::Shutdown { id } => self.handle_shutdown(id).await
         }
     }
 
@@ -287,5 +337,34 @@ impl ClientHandler {
         realm.launch(&mut runner, self.context.clone(), &mut self.handler_threads)?;
 
         Ok(CommandResult::RealmLaunched)
+    }
+
+    pub async fn handle_start_app(&mut self, id: String, realm_id: String) -> Result<CommandResult, ClientHandlerError> {
+        let realm = self.realms.get_mut(&realm_id)
+            .ok_or(ClientHandlerError::RealmDoesNotExist(realm_id))?;
+        realm.start_app(id).await?;
+
+        Ok(CommandResult::ApplicationStarted)
+    }
+
+    pub async fn handle_terminate_app(&mut self, id: String, realm_id: String) -> Result<CommandResult, ClientHandlerError> {
+        let realm = self.realms.get_mut(&realm_id)
+            .ok_or(ClientHandlerError::RealmDoesNotExist(realm_id))?;
+        realm.terminate_app(id).await?;
+        Ok(CommandResult::ApplicationExited)
+    }
+
+    pub async fn handle_kill_app(&mut self, id: String, realm_id: String) -> Result<CommandResult, ClientHandlerError> {
+        let realm = self.realms.get_mut(&realm_id)
+            .ok_or(ClientHandlerError::RealmDoesNotExist(realm_id))?;
+        realm.kill_app(id).await?;
+        Ok(CommandResult::ApplicationExited)
+    }
+
+    pub async fn handle_shutdown(&mut self, realm_id: String) -> Result<CommandResult, ClientHandlerError> {
+        let realm = self.realms.get_mut(&realm_id)
+            .ok_or(ClientHandlerError::RealmDoesNotExist(realm_id))?;
+        realm.shutdown().await?;
+        Ok(CommandResult::RealmExited)
     }
 }

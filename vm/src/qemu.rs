@@ -1,4 +1,5 @@
-use std::{env, process::{Child, Command}};
+use std::{env, process::Stdio};
+use tokio::process::{Child, Command};
 
 use thiserror::Error;
 
@@ -12,11 +13,6 @@ pub enum QEMUError {
 
 pub struct QEMURunner {
     command: Command
-}
-
-#[derive(Debug)]
-pub struct QEMUInstance {
-    process: Child
 }
 
 pub trait VMBuilder {
@@ -42,18 +38,16 @@ impl QEMURunner {
         }
     }
 
-    pub fn launch(&mut self) -> Result<QEMUInstance, QEMUError> {
+    pub fn launch(&mut self) -> Result<Child, QEMUError> {
         println!("cmd: {:?}", self.command);
-        Ok(QEMUInstance::new(
-            self.command.spawn()
-                .map_err(QEMUError::FailedToStart)?
-        ))
-    }
-}
 
-impl QEMUInstance {
-    pub fn new(process: Child) -> Self {
-        Self { process }
+        self.command.stdin(Stdio::null());
+        self.command.stdout(Stdio::piped());
+        self.command.stderr(Stdio::piped());
+
+        Ok(self.command.spawn()
+                .map_err(QEMUError::FailedToStart)?
+        )
     }
 }
 

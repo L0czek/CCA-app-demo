@@ -34,7 +34,7 @@ async fn main() -> anyhow::Result<()> {
     let mut manager = AppManager::setup(config).await?;
 
     info!("Loading realm info from host");
-    manager.read_provision_info()?;
+    manager.read_provision_info().await?;
 
     info!("Decrypting applications main storage");
     manager.decrypt_main_storage()?;
@@ -50,6 +50,9 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Mounting overlays");
     manager.mount_overlay()?;
+
+    info!("Starting event loop");
+    manager.event_loop().await?;
 
     Ok(())
 }

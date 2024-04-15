@@ -14,6 +14,7 @@ mod daemon;
 mod realm;
 mod qemu;
 mod qdisk;
+mod utils;
 mod vsock;
 
 #[derive(Parser, Debug)]
