@@ -20,3 +20,16 @@ pub struct ApplicationInfo {
 pub struct RealmInfo {
     pub apps: HashMap<String, ApplicationInfo>
 }
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Command {
+    StartApp(String),
+    TerminateApp(String),
+    KillApp(String),
+    Shutdown()
+}
+
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub enum Response {
+    Ok
+}

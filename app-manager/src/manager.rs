@@ -2,11 +2,11 @@ use std::{collections::HashMap, sync::Arc};
 
 use thiserror::Error;
 use log::{debug, info};
-use protocol::RealmInfo;
-use tokio::fs::create_dir;
+use protocol::{Command, RealmInfo, Response};
+use tokio::{fs::create_dir, task::spawn_blocking};
 use tokio_vsock::{VsockAddr, VsockStream, VMADDR_CID_HOST};
 
-use crate::{app::{Application, ApplicationError}, config::Config, diskmanager::{DiskManager, DiskManagerError}, dm::{DeviceMapper, DeviceMapperError}, dmcrypt::{DmCryptError, Key}, keys::{KeyManager, KeyManagerError}};
+use crate::{app::{Application, ApplicationError}, config::Config, diskmanager::{DiskManager, DiskManagerError}, dm::{DeviceMapper, DeviceMapperError}, dmcrypt::{DmCryptError, Key}, keys::{KeyManager, KeyManagerError}, utils::{serde_read, serde_write, UtilitiesError}};
 
 #[derive(Error, Debug)]
 pub enum AppManagerError {
@@ -32,7 +32,10 @@ pub enum AppManagerError {
     WorkdirCreation(#[source] std::io::Error),
 
     #[error("Device mapper error")]
-    DeviceMapperError(#[from] DeviceMapperError)
+    DeviceMapperError(#[from] DeviceMapperError),
+
+    #[error("Utilities error")]
+    UtilitiesError(#[from] UtilitiesError)
 }
 
 pub struct AppManagerCtx {
@@ -77,9 +80,8 @@ impl AppManager {
         Ok(manager)
     }
 
-    pub fn read_provision_info(&mut self) -> Result<(), AppManagerError> {
-        let info: RealmInfo = serde_json::from_reader(&mut self.stream)
-            .map_err(AppManagerError::ProtocolError)?;
+    pub async fn read_provision_info(&mut self) -> Result<(), AppManagerError> {
+        let info: RealmInfo = serde_read(&mut self.stream).await?;
 
         debug!("Received RealmInfo: {:#?}", info);
 
@@ -100,6 +102,7 @@ impl AppManager {
             info!("Decrypting main storage for {}", name);
             app.decrypt_main_storage(&self.config.crypto, &key)?;
         }
+
         Ok(())
     }
 
@@ -141,5 +144,30 @@ impl AppManager {
         }
 
         Ok(())
+    }
+
+    fn handle_command(&mut self, command: &Command) -> Result<Response, AppManagerError> {
+        match command {
+            Command::Shutdown() => {
+                Ok(Response::Ok)
+            },
+
+            _ => Ok(Response::Ok)
+        }
+    }
+
+    pub async fn event_loop(&mut self) -> Result<(), AppManagerError> {
+        loop {
+            let req: Command = serde_read(&mut self.stream).await?;
+            debug!("Received command: {:?}", req);
+            let resp = self.handle_command(&req)?;
+            debug!("Genereted response: {:?}", resp);
+            serde_write(&mut self.stream, resp).await?;
+
+            if let Command::Shutdown() = req {
+                info!("Received shutdown request exiting");
+                break Ok(());
+            }
+        }
     }
 }
