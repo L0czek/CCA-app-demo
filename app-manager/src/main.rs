@@ -15,6 +15,7 @@ mod utils;
 static CONFIG: &'static str = r"
 workdir: /workdir
 vsock_port: 1337
+image_registry: http://192.168.100.1:8888
 crypto:
   cipher: Aes
   iv_mode: Plain
@@ -40,7 +41,7 @@ async fn main() -> anyhow::Result<()> {
     manager.decrypt_main_storage()?;
 
     info!("Provisioning...");
-    manager.provision_app_image()?;
+    manager.provision_app_image().await?;
 
     info!("Decrypting secure storage");
     manager.decrypt_secure_storage()?;
@@ -50,6 +51,9 @@ async fn main() -> anyhow::Result<()> {
 
     info!("Mounting overlays");
     manager.mount_overlay()?;
+
+    info!("Launcing applications");
+    manager.launch_applications()?;
 
     info!("Starting event loop");
     manager.event_loop().await?;

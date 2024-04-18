@@ -1,5 +1,6 @@
 use std::{ffi::{OsStr, OsString}, path::{Path, PathBuf}};
 
+use async_trait::async_trait;
 use hex::FromHexError;
 use log::{debug, info, warn};
 use thiserror::Error;
@@ -38,7 +39,10 @@ pub enum InstallerError {
     HashNumberMismatch(),
 
     #[error("Error while cleaning up image files")]
-    CleanupError(#[source] std::io::Error)
+    CleanupError(#[source] std::io::Error),
+
+    #[error("No container config for arm64 arch found")]
+    NoImageForArch()
 }
 
 impl From<InstallerError> for ImageError {
@@ -52,12 +56,26 @@ pub struct Installer {
 }
 
 impl Installer {
-    async fn read_manifest(&self, imgdir: &Path) -> Result<(ImageManifest, Box<[u8]>)> {
+    async fn read_manifest(&self, imgdir: &Path, rot: Option<Box<[u8]>>) -> Result<(ImageManifest, ContainerConfig)> {
         let manifest_path = imgdir.join("manifest.json");
         let (manifest, manifest_hash) = read_measured(crate::HashType::Sha256, &manifest_path).await?;
+
+        if let Some(rot) = rot && rot != manifest_hash {
+            return Err(InstallerError::HashMismatch(manifest_path, rot, manifest_hash).into());
+        }
+
         let manifests = serde_json::from_str::<Vec<ImageManifest>>(&manifest)
             .map_err(|e| ImageError::SerdeError(manifest, e))?;
-        Ok((manifests.into_iter().next().ok_or(InstallerError::EmptyManifest())?, manifest_hash))
+
+        for manifest in manifests.into_iter() {
+            let config = self.read_container_config(imgdir, &manifest).await?;
+
+            if config.arch == "arm64" {
+                return Ok((manifest, config))
+            }
+        }
+
+        return Err(InstallerError::NoImageForArch().into());
     }
 
     async fn read_container_config(&self, imgdir: &Path, manifest: &ImageManifest) -> Result<ContainerConfig> {
@@ -77,74 +95,65 @@ impl Installer {
 
         Ok(config)
     }
+
+    pub fn target(path: PathBuf) -> Self {
+        Self { dst: path }
+    }
 }
 
+#[async_trait]
 impl InstallerTrait for Installer {
-    fn target(path: &Path) -> Self {
-        Self { dst: PathBuf::from(path) }
+    async fn install(&self, rot: Box<[u8]>, image: Box<dyn tokio::io::AsyncRead + Unpin + Send>) -> crate::Result<Box<dyn crate::Launcher>> {
+        let imgdir = self.dst.join("img");
+
+        info!("Decompressing docker image");
+        let mut archive = Archive::new(image);
+        create_dir(&imgdir).await.map_err(InstallerError::DirCreationError)?;
+        archive.unpack(&imgdir).await.map_err(InstallerError::ArchiveError)?;
+
+        info!("Reading image manifest");
+        let (manifest, config) = self.read_manifest(&imgdir, Some(rot)).await?;
+
+        info!("Decompressing filesystem layers");
+        let fsdir = self.dst.join("rootfs");
+        create_dir(&fsdir).await.map_err(InstallerError::DirCreationError)?;
+
+        if manifest.layers.len() != config.rootfs.diff_ids.len() {
+            return Err(InstallerError::HashNumberMismatch().into());
+        }
+
+        for (path, digest) in manifest.layers.iter().zip(config.rootfs.diff_ids.iter()) {
+            debug!("Decompressing {:?}", path);
+
+            let mut reader = Hasher::new(
+                digest.ty,
+                File::open(imgdir.join(path)).await.map_err(|e| InstallerError::InvalidImageFileError(path.clone(), e))?
+            );
+
+            let mut archive = Archive::new(&mut reader);
+            archive.unpack(&fsdir).await.map_err(InstallerError::ArchiveError)?;
+            discard_rest(&mut reader).await;
+            let measurement = reader.finalize();
+
+            if measurement != digest.val {
+                return Err(InstallerError::HashMismatch(path.clone(), digest.val.clone(), measurement).into());
+            }
+        }
+
+        info!("Installation finished");
+        info!("Application ready at {:?}", fsdir);
+
+        Ok(Box::new(Launcher::new(fsdir, config)) as Box<dyn crate::Launcher>)
     }
 
-    fn install(&self, image: impl tokio::io::AsyncRead + Unpin) -> impl std::future::Future<Output = crate::Result<Box<dyn crate::Launcher>>> {
-        async move {
-            let imgdir = self.dst.join("img");
+    async fn validate(&self) -> crate::Result<Box<dyn crate::Launcher>> {
+        let imgdir = self.dst.join("img");
 
-            info!("Decompressing docker image");
-            let mut archive = Archive::new(image);
-            create_dir(&imgdir).await.map_err(InstallerError::DirCreationError)?;
-            archive.unpack(&imgdir).await.map_err(InstallerError::ArchiveError)?;
+        info!("Reading image manifest");
+        let (_, config) = self.read_manifest(&imgdir, None).await?;
 
-            info!("Reading image manifest");
-            let (manifest, _) = self.read_manifest(&imgdir).await?;
-
-            info!("Reading container config");
-            let config = self.read_container_config(&imgdir, &manifest).await?;
-
-            info!("Decompressing filesystem layers");
-            let fsdir = self.dst.join("rootfs");
-            create_dir(&fsdir).await.map_err(InstallerError::DirCreationError)?;
-
-            if manifest.layers.len() != config.rootfs.diff_ids.len() {
-                return Err(InstallerError::HashNumberMismatch().into());
-            }
-
-            for (path, digest) in manifest.layers.iter().zip(config.rootfs.diff_ids.iter()) {
-                debug!("Decompressing {:?}", path);
-
-                let mut reader = Hasher::new(
-                    digest.ty,
-                    File::open(imgdir.join(path)).await.map_err(|e| InstallerError::InvalidImageFileError(path.clone(), e))?
-                );
-
-                let mut archive = Archive::new(&mut reader);
-                archive.unpack(&fsdir).await.map_err(InstallerError::ArchiveError)?;
-                discard_rest(&mut reader).await;
-                let measurement = reader.finalize();
-
-                if measurement != digest.val {
-                    return Err(InstallerError::HashMismatch(path.clone(), digest.val.clone(), measurement).into());
-                }
-            }
-
-            info!("Installation finished");
-            info!("Application ready at {:?}", fsdir);
-
-            Ok(Box::new(Launcher::new(fsdir, config)) as Box<dyn crate::Launcher>)
-        }
-    }
-
-    fn validate(&self) -> impl std::future::Future<Output = crate::Result<Box<dyn crate::Launcher>>> {
-        async move {
-            let imgdir = self.dst.join("img");
-
-            info!("Reading image manifest");
-            let (manifest, _) = self.read_manifest(&imgdir).await?;
-
-            info!("Reading container config");
-            let config = self.read_container_config(&imgdir, &manifest).await?;
-
-            let fsdir = self.dst.join("rootfs");
-            info!("Application ready at {:?}", fsdir);
-            Ok(Box::new(Launcher::new(fsdir, config)) as Box<dyn crate::Launcher>)
-        }
+        let fsdir = self.dst.join("rootfs");
+        info!("Application ready at {:?}", fsdir);
+        Ok(Box::new(Launcher::new(fsdir, config)) as Box<dyn crate::Launcher>)
     }
 }

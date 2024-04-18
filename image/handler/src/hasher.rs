@@ -5,18 +5,18 @@ use tokio::io::AsyncReadExt;
 use crate::common::HashType;
 
 #[pin_project]
-pub struct Hasher<T: AsyncRead> {
-    hash: Box<dyn DynDigest>,
+pub struct Hasher<T: AsyncRead + Send> {
+    hash: Box<dyn DynDigest + Send>,
 
     #[pin]
     inner: T,
 }
 
-impl<T: AsyncRead> Hasher<T> {
+impl<T: AsyncRead + Send> Hasher<T> {
     pub fn new(ty: HashType, inner: T) -> Self {
         let hash = match ty {
-            HashType::Sha256 => Box::new(Sha256::new()) as Box<dyn DynDigest>,
-            HashType::Sha512 => Box::new(Sha512::new()) as Box<dyn DynDigest>
+            HashType::Sha256 => Box::new(Sha256::new()) as Box<dyn DynDigest + Send>,
+            HashType::Sha512 => Box::new(Sha512::new()) as Box<dyn DynDigest + Send>
         };
 
         Self {
@@ -30,7 +30,7 @@ impl<T: AsyncRead> Hasher<T> {
     }
 }
 
-impl<T: AsyncRead> AsyncRead for Hasher<T> {
+impl<T: AsyncRead + Send> AsyncRead for Hasher<T> {
     fn poll_read(
             self: std::pin::Pin<&mut Self>,
             cx: &mut std::task::Context<'_>,

@@ -1,11 +1,11 @@
-use std::collections::HashMap;
+use std::{collections::HashMap, os::unix::process::ExitStatusExt, process::ExitStatus};
 
 use uuid::Uuid;
-use serde::{Serialize, Deserialize};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct ProvisionInfo {
-
+    pub uuid: Uuid
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -31,5 +31,18 @@ pub enum Command {
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub enum Response {
-    Ok
+    Ok,
+
+    #[serde(serialize_with = "serialize_exit_status")]
+    #[serde(deserialize_with = "deserialize_exit_status")]
+    ExitStatus(ExitStatus)
+}
+
+fn serialize_exit_status<S: Serializer>(status: &ExitStatus, s: S) -> Result<S::Ok, S::Error> {
+    s.serialize_i32(status.clone().into_raw())
+}
+
+fn deserialize_exit_status<'de, D: Deserializer<'de>>(d: D) -> Result<ExitStatus, D::Error> {
+    let code = i32::deserialize(d)?;
+    Ok(ExitStatus::from_raw(code))
 }
