@@ -2,6 +2,7 @@ use std::{fs::create_dir, path::PathBuf};
 
 use thiserror::Error;
 use tokio::task::JoinError;
+use uuid::Uuid;
 
 use crate::{qdisk::{QEMUDisk, QEMUDiskError}, qemu::VMBuilder};
 use protocol::{ApplicationInfo, ProvisionInfo};
@@ -25,7 +26,7 @@ pub enum ApplicationError {
 pub struct ApplicationConfig {
     pub main_storage_size_mb: usize,
     pub secure_storage_size_mb: usize,
-    pub provision_from: Option<String>
+    pub provision_from: Option<Uuid>
 }
 
 #[derive(Debug)]
@@ -81,7 +82,7 @@ impl Application {
         ApplicationInfo {
             main_partition_uuid: self.main_storage.part_uuid().clone(),
             secure_partition_uuid: self.secure_storage.part_uuid().clone(),
-            provision_info: self.config.provision_from.as_ref().map(|_| ProvisionInfo {})
+            provision_info: self.config.provision_from.as_ref().map(|uuid| ProvisionInfo { uuid: *uuid })
         }
     }
 }

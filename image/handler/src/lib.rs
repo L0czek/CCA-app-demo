@@ -1,5 +1,6 @@
 #![feature(result_flattening)]
 #![feature(async_fn_in_trait)]
+#![feature(let_chains)]
 
 mod common;
 mod hasher;
@@ -37,10 +38,11 @@ pub enum ImageError {
 
 pub type Result<T> = std::result::Result<T, ImageError>;
 
+
+#[async_trait]
 pub trait InstallerTrait {
-    fn target(path: &Path) -> Self;
-    fn install(&self, image: impl AsyncRead + Unpin) -> impl Future<Output = Result<Box<dyn Launcher>>>;
-    fn validate(&self) -> impl Future<Output = Result<Box<dyn Launcher>>>;
+    async fn install(&self, rot: Box<[u8]>, image: Box<dyn AsyncRead + Unpin + Send>) -> Result<Box<dyn Launcher>>;
+    async fn validate(&self) -> Result<Box<dyn Launcher>>;
 }
 
 

@@ -1,8 +1,11 @@
-use std::{fs::create_dir, path::PathBuf, sync::Arc};
+use std::{fs::create_dir, path::PathBuf, process::ExitStatus, sync::Arc};
 
+use ir_client::async_client::Client;
+use handler::{ImageError, Installer, InstallerTrait, Launcher};
 use log::{debug, info};
 use protocol::ApplicationInfo;
 use thiserror::Error;
+use tokio::task::JoinHandle;
 use uuid::Uuid;
 
 use crate::{diskmanager::{DiskManager, DiskManagerError, Partition}, dm::DeviceMapperError, dmcrypt::{CryptDevice, CryptoParams, DmCryptError, DmCryptTable, Key}, manager::AppManagerCtx, utils::{format_ext2, mount_ext2, mount_overlay, UtilitiesError}};
@@ -35,7 +38,22 @@ pub enum ApplicationError {
     UtilitiesError(#[from] UtilitiesError),
 
     #[error("Failed to create mountpoint {0:?}")]
-    MkdirError(PathBuf, #[source] std::io::Error)
+    MkdirError(PathBuf, #[source] std::io::Error),
+
+    #[error("Docker image handler error")]
+    DockerImageError(#[from] ImageError),
+
+    #[error("Image registry error")]
+    ImageRegistryError(ir_client::error::Error),
+
+    #[error("Application not installed")]
+    ApplicationNotInstalled()
+}
+
+impl From<ir_client::error::Error> for ApplicationError {
+    fn from(value: ir_client::error::Error) -> Self {
+        Self::ImageRegistryError(value)
+    }
 }
 
 pub struct Application {
@@ -43,7 +61,9 @@ pub struct Application {
     workdir: PathBuf,
     info: ApplicationInfo,
     main_storage: Option<CryptDevice>,
-    secure_storage: Option<CryptDevice>
+    secure_storage: Option<CryptDevice>,
+    installer: Box<dyn InstallerTrait>,
+    launcher: Option<Box<dyn Launcher>>
 }
 
 impl Application {
@@ -51,13 +71,16 @@ impl Application {
         if !workdir.exists() {
             create_dir(&workdir).map_err(ApplicationError::WorkdirCreation)?;
         }
+        let app_main_storage = workdir.join("main");
 
         Ok(Self {
             ctx,
             workdir,
             info,
             main_storage: None,
-            secure_storage: None
+            secure_storage: None,
+            installer: Box::new(Installer::target(app_main_storage)),
+            launcher: None
         })
     }
 
@@ -107,7 +130,14 @@ impl Application {
         Ok(())
     }
 
-    pub fn provision_app_image(&self) -> Result<(), ApplicationError> {
+    async fn install_app_from_registry(&mut self, url: &String, uuid: &Uuid) -> Result<Box<dyn Launcher>, ApplicationError> {
+        let client = Client::new(url.to_string());
+        let manifest = client.get_manifest(*uuid).await?;
+        let stream = client.get_image_stream(*uuid).await?;
+        Ok(self.installer.install(manifest.root_of_trust.into(), Box::new(stream)).await?)
+    }
+
+    pub async fn provision_app_image(&mut self, image_registry: &String) -> Result<(), ApplicationError> {
         if self.main_storage.is_none() {
             return Err(ApplicationError::MainStorageNotDecrypted());
         }
@@ -117,6 +147,13 @@ impl Application {
             "main",
             "Main storage"
         )?;
+
+        if let Some(info) = self.info.provision_info.as_ref() {
+            let uuid = info.uuid;
+            self.launcher = Some(self.install_app_from_registry(image_registry, &uuid).await?);
+        } else {
+            self.launcher = Some(self.installer.validate().await?);
+        }
 
         Ok(())
     }
@@ -157,5 +194,29 @@ impl Application {
         mount_overlay(&lower, &upper, &work, &target)?;
 
         Ok(())
+    }
+
+    pub fn launch(&mut self) -> Result<JoinHandle<handler::Result<()>>, ApplicationError> {
+        if let Some(launcher) = self.launcher.as_mut() {
+            Ok(launcher.launch()?)
+        } else {
+            Err(ApplicationError::ApplicationNotInstalled())
+        }
+    }
+
+    pub async fn terminate(&mut self) -> Result<ExitStatus, ApplicationError> {
+        if let Some(launcher) = self.launcher.as_mut() {
+            Ok(launcher.stop().await?)
+        } else {
+            Err(ApplicationError::ApplicationNotInstalled())
+        }
+    }
+
+    pub async fn kill(&mut self) -> Result<ExitStatus, ApplicationError> {
+        if let Some(launcher) = self.launcher.as_mut() {
+            Ok(launcher.kill().await?)
+        } else {
+            Err(ApplicationError::ApplicationNotInstalled())
+        }
     }
 }

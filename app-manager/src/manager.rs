@@ -1,9 +1,10 @@
 use std::{collections::HashMap, sync::Arc};
 
+use futures::stream::FuturesUnordered;
 use thiserror::Error;
 use log::{debug, info};
 use protocol::{Command, RealmInfo, Response};
-use tokio::{fs::create_dir, task::spawn_blocking};
+use tokio::{fs::create_dir, task::{spawn_blocking, JoinHandle}};
 use tokio_vsock::{VsockAddr, VsockStream, VMADDR_CID_HOST};
 
 use crate::{app::{Application, ApplicationError}, config::Config, diskmanager::{DiskManager, DiskManagerError}, dm::{DeviceMapper, DeviceMapperError}, dmcrypt::{DmCryptError, Key}, keys::{KeyManager, KeyManagerError}, utils::{serde_read, serde_write, UtilitiesError}};
@@ -35,7 +36,10 @@ pub enum AppManagerError {
     DeviceMapperError(#[from] DeviceMapperError),
 
     #[error("Utilities error")]
-    UtilitiesError(#[from] UtilitiesError)
+    UtilitiesError(#[from] UtilitiesError),
+
+    #[error("Application does not exists")]
+    ApplicationDoesNotExists()
 }
 
 pub struct AppManagerCtx {
@@ -48,7 +52,8 @@ pub struct AppManager {
     ctx: Arc<AppManagerCtx>,
     config: Config,
     stream: VsockStream,
-    apps: HashMap<String, Application>
+    apps: HashMap<String, Application>,
+    thread_handlers: FuturesUnordered<JoinHandle<handler::Result<()>>>
 }
 
 impl AppManager {
@@ -74,7 +79,8 @@ impl AppManager {
             ctx: Arc::new(AppManagerCtx { disks, devicemapper, keymanager }),
             config,
             stream,
-            apps: HashMap::new()
+            apps: HashMap::new(),
+            thread_handlers: FuturesUnordered::new()
         };
 
         Ok(manager)
@@ -106,10 +112,10 @@ impl AppManager {
         Ok(())
     }
 
-    pub fn provision_app_image(&self) -> Result<(), AppManagerError> {
-        for (name, app) in self.apps.iter() {
+    pub async fn provision_app_image(&mut self) -> Result<(), AppManagerError> {
+        for (name, app) in self.apps.iter_mut() {
             info!("Provisioning image for {}", name);
-            app.provision_app_image()?;
+            app.provision_app_image(&self.config.image_registry).await?;
         }
 
         Ok(())
@@ -146,13 +152,40 @@ impl AppManager {
         Ok(())
     }
 
-    fn handle_command(&mut self, command: &Command) -> Result<Response, AppManagerError> {
+    pub fn launch_applications(&mut self) -> Result<(), AppManagerError> {
+        for (name, app) in self.apps.iter_mut() {
+            info!("Launching: {}", name);
+            let handle = app.launch()?;
+            self.thread_handlers.push(handle);
+        }
+
+        Ok(())
+    }
+
+    async fn handle_command(&mut self, command: &Command) -> Result<Response, AppManagerError> {
         match command {
             Command::Shutdown() => {
                 Ok(Response::Ok)
             },
 
-            _ => Ok(Response::Ok)
+            Command::TerminateApp(id) => {
+                let app = self.apps.get_mut(id)
+                    .ok_or(AppManagerError::ApplicationDoesNotExists())?;
+                Ok(Response::ExitStatus(app.terminate().await?))
+            },
+
+            Command::KillApp(id) => {
+                let app = self.apps.get_mut(id)
+                    .ok_or(AppManagerError::ApplicationDoesNotExists())?;
+                Ok(Response::ExitStatus(app.kill().await?))
+            },
+
+            Command::StartApp(id) => {
+                let app = self.apps.get_mut(id)
+                    .ok_or(AppManagerError::ApplicationDoesNotExists())?;
+                self.thread_handlers.push(app.launch()?);
+                Ok(Response::Ok)
+            },
         }
     }
 
@@ -160,7 +193,7 @@ impl AppManager {
         loop {
             let req: Command = serde_read(&mut self.stream).await?;
             debug!("Received command: {:?}", req);
-            let resp = self.handle_command(&req)?;
+            let resp = self.handle_command(&req).await?;
             debug!("Genereted response: {:?}", resp);
             serde_write(&mut self.stream, resp).await?;
 

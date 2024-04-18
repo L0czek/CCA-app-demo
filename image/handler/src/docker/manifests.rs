@@ -224,7 +224,7 @@ pub struct ImageManifest {
     pub config: String,
 
     #[serde(rename = "RepoTags")]
-    pub tags: Vec<String>,
+    pub tags: Option<Vec<String>>,
 
     #[serde(rename = "Layers")]
     pub layers: Vec<PathBuf>

@@ -260,6 +260,39 @@ impl Realm {
                                 } else {
                                     Response::RealmNotConnected
                                 }
+                            }
+
+                            Request::TerminateApp(id) => {
+                                if let Some(mut s) = stream.as_mut() {
+                                    serde_write(&mut s, Command::TerminateApp(id)).await?;
+                                    let _ = serde_read::<protocol::Response>(&mut s).await?;
+
+                                    Response::Ok
+                                } else {
+                                    Response::RealmNotConnected
+                                }
+                            },
+
+                            Request::KillApp(id) => {
+                                if let Some(mut s) = stream.as_mut() {
+                                    serde_write(&mut s, Command::KillApp(id)).await?;
+                                    let _ = serde_read::<protocol::Response>(&mut s).await?;
+
+                                    Response::Ok
+                                } else {
+                                    Response::RealmNotConnected
+                                }
+                            },
+
+                            Request::StartApp(id) => {
+                                if let Some(mut s) = stream.as_mut() {
+                                    serde_write(&mut s, Command::StartApp(id)).await?;
+                                    let _ = serde_read::<protocol::Response>(&mut s).await?;
+
+                                    Response::Ok
+                                } else {
+                                    Response::RealmNotConnected
+                                }
                             },
 
                             _ => { Response::Ok }

@@ -4,6 +4,7 @@ use clap::{crate_name, Parser, Subcommand};
 use log::{debug, info};
 use thiserror::Error;
 use tokio::{io::{AsyncBufReadExt, AsyncWriteExt, BufReader, BufStream}, net::UnixStream, select, task::JoinSet};
+use uuid::Uuid;
 
 use crate::{app::ApplicationConfig, daemon::DaemonContext, qemu::{QEMURunner, VMBuilder}, realm::{NetworkConfig, Realm, RealmConfig, RealmError}};
 
@@ -79,7 +80,7 @@ pub enum Command {
 
         /// Provision from
         #[clap(short, long)]
-        provision_from: Option<String>
+        provision_from: Option<Uuid>
     },
 
     /// Launch a configured realm

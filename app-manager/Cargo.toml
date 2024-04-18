@@ -22,3 +22,6 @@ tokio = { version = "1.37.0", features = ["io-util", "sync", "rt", "rt-multi-thr
 tokio-vsock = "0.5.0"
 futures-util = "0.3.30"
 serde_yaml = "0.9.34"
+ir-client = { git = "https://github.com/Havner/image-registry.git" }
+handler = { path = "../image/handler" }
+futures = "0.3.30"
