@@ -9,6 +9,7 @@ mod util;
 
 use std::future::Future;
 use std::path::Path;
+use std::path::PathBuf;
 use std::process::ExitCode;
 use std::process::ExitStatus;
 
@@ -49,7 +50,7 @@ pub trait InstallerTrait {
 
 #[async_trait]
 pub trait Launcher {
-    fn launch(&mut self) -> Result<JoinHandle<Result<()>>>;
+    fn launch(&mut self, disk_path: &PathBuf) -> Result<JoinHandle<Result<()>>>;
     async fn stop(&mut self) -> Result<ExitStatus>;
     async fn kill(&mut self) -> Result<ExitStatus>;
     async fn wait(&mut self) -> Result<ExitStatus>;
