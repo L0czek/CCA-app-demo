@@ -143,7 +143,7 @@ impl InstallerTrait for Installer {
         info!("Installation finished");
         info!("Application ready at {:?}", fsdir);
 
-        Ok(Box::new(Launcher::new(fsdir, config)) as Box<dyn crate::Launcher>)
+        Ok(Box::new(Launcher::new("rootfs".into(), config)) as Box<dyn crate::Launcher>)
     }
 
     async fn validate(&self) -> crate::Result<Box<dyn crate::Launcher>> {
@@ -152,8 +152,7 @@ impl InstallerTrait for Installer {
         info!("Reading image manifest");
         let (_, config) = self.read_manifest(&imgdir, None).await?;
 
-        let fsdir = self.dst.join("rootfs");
-        info!("Application ready at {:?}", fsdir);
-        Ok(Box::new(Launcher::new(fsdir, config)) as Box<dyn crate::Launcher>)
+        info!("Application ready at {:?}", self.dst.join("rootfs"));
+        Ok(Box::new(Launcher::new("rootfs".into(), config)) as Box<dyn crate::Launcher>)
     }
 }

@@ -187,7 +187,7 @@ impl Launcher {
 
 #[async_trait]
 impl crate::Launcher for Launcher {
-    fn launch(&mut self) -> crate::Result<tokio::task::JoinHandle<crate::Result<()>>> {
+    fn launch(&mut self, disk_path: &PathBuf) -> crate::Result<tokio::task::JoinHandle<crate::Result<()>>> {
         let env = self.env();
         let argv = self.argv();
 
@@ -201,7 +201,7 @@ impl crate::Launcher for Launcher {
         cmd.envs(env.iter().map(|line| line.split_once("=").unwrap_or((line, ""))));
         cmd.args(argv.iter().skip(1));
 
-        let rootfs = self.rootfs.clone();
+        let rootfs = disk_path.join(&self.rootfs);
         let chdir = self.conf.config.pwd.clone();
         let (uid, gid) = match self.conf.config.user.as_ref() {
             None => (getuid(), getgid()),

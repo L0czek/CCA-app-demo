@@ -198,7 +198,8 @@ impl Application {
 
     pub fn launch(&mut self) -> Result<JoinHandle<handler::Result<()>>, ApplicationError> {
         if let Some(launcher) = self.launcher.as_mut() {
-            Ok(launcher.launch()?)
+            let target = self.workdir.join("root");
+            Ok(launcher.launch(&target)?)
         } else {
             Err(ApplicationError::ApplicationNotInstalled())
         }
