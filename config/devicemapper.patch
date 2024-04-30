@@ -1,0 +1,31 @@
+diff --git a/src/core/dm.rs b/src/core/dm.rs
+index a93b2b1..2a0f956 100644
+--- a/src/core/dm.rs
++++ b/src/core/dm.rs
+@@ -130,7 +130,7 @@ impl DM {
+ 
+         // Begin udev sync transaction and set DM_UDEV_PRIMARY_SOURCE_FLAG
+         // if ioctl command generates uevents.
+-        let sync = UdevSync::begin(hdr, ioctl)?;
++        //let sync = UdevSync::begin(hdr, ioctl)?;
+ 
+         let data_size = cmp::max(
+             MIN_BUF_SIZE,
+@@ -161,7 +161,7 @@ impl DM {
+                 convert_ioctl_res!(nix_ioctl(self.file.as_raw_fd(), op, buffer.as_mut_ptr()))
+             } {
+                 // Cancel udev sync and clean up semaphore
+-                sync.cancel();
++                // sync.cancel();
+                 return Err(DmError::Core(errors::Error::Ioctl(
+                     op as u8,
+                     DeviceInfo::new(*hdr).ok().map(Box::new),
+@@ -189,7 +189,7 @@ impl DM {
+         let data_end = cmp::max(buffer_hdr.data_size, buffer_hdr.data_start);
+ 
+         // Synchronize with udev event processing
+-        sync.end(buffer_hdr.flags)?;
++        // sync.end(buffer_hdr.flags)?;
+         Ok((
+             DeviceInfo::try_from(*buffer_hdr)?,
+             buffer[buffer_hdr.data_start as usize..data_end as usize].to_vec(),

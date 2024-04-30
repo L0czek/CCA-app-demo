@@ -8,23 +8,26 @@ TOOLS_DIR            = $(ROOT_DIR)/tools
 GNU_TOOLCHAIN_URL    = https://developer.arm.com/-/media/Files/downloads/gnu/13.2.rel1/binrel/arm-gnu-toolchain-13.2.rel1-x86_64-aarch64-none-linux-gnu.tar.xz
 GNU_TOOLCHAIN_DIR    = $(TOOLCHAIN_DIR)/aarch64-none-linux-gnu/bin
 
-KERNEL_UPSTREAM    = https://github.com/torvalds/linux
-KERNEL_DIR         = $(ROOT_DIR)/linux
+KERNEL_UPSTREAM      = https://github.com/torvalds/linux
+KERNEL_DIR           = $(ROOT_DIR)/linux
 
-BUSYBOX_UPSTREAM   = https://github.com/mirror/busybox.git
-BUSYBOX_DIR        = $(TOOLS_DIR)/busybox
+BUSYBOX_UPSTREAM     = https://github.com/mirror/busybox.git
+BUSYBOX_DIR          = $(TOOLS_DIR)/busybox
 
-STRACE_UPSTREAM    = https://github.com/strace/strace.git
-STRACE_DIR         = $(TOOLS_DIR)/strace
+STRACE_UPSTREAM      = https://github.com/strace/strace.git
+STRACE_DIR           = $(TOOLS_DIR)/strace
 
-GDB_UPSTREAM       = https://ftp.gnu.org/gnu/gdb/gdb-14.1.tar.xz
-GDB_DIR            = $(TOOLS_DIR)/gdb
+GDB_UPSTREAM         = https://ftp.gnu.org/gnu/gdb/gdb-14.1.tar.xz
+GDB_DIR              = $(TOOLS_DIR)/gdb
 
-QEMU_UPSTREAM      = https://github.com/qemu/qemu.git
-QEMU_DIR           = $(TOOLS_DIR)/qemu
+QEMU_UPSTREAM        = https://github.com/qemu/qemu.git
+QEMU_DIR             = $(TOOLS_DIR)/qemu
 
-APP_MANAGER_DIR    = $(ROOT_DIR)/app-manager
-APP_MANAGER_BIN    = $(APP_MANAGER_DIR)/target/aarch64-unknown-linux-gnu/debug/app-manager
+APP_MANAGER_DIR      = $(ROOT_DIR)/app-manager
+APP_MANAGER_BIN      = $(APP_MANAGER_DIR)/target/aarch64-unknown-linux-gnu/debug/app-manager
+
+DEVICE_MAPPER_RS_DIR = $(ROOT_DIR)/thirdparty/devicemapper-rs
+DEVICE_MAPPER_RS_URL = "https://github.com/stratis-storage/devicemapper-rs.git"
 
 INITRAMFS_DIR      = $(ROOT_DIR)/initramfs
 
@@ -69,6 +72,12 @@ fetch-qemu:
 	@echo "$(GREEN_COLOR)Fetching QEMU source.$(NC)"
 	@[ -d "$(QEMU_DIR)" ] || git clone --depth=1 $(QEMU_UPSTREAM) $(QEMU_DIR)
 
+fetch-devicemapper-rs:
+	@echo "$(GREEN_COLOR)Fetching devicemapper-rs source.$(NC)"
+	@[ -d "$(DEVICE_MAPPER_RS_DIR)" ] || \
+		mkdir "$(ROOT_DIR)/thirdparty" && \
+		git clone "$(DEVICE_MAPPER_RS_URL)" "$(DEVICE_MAPPER_RS_DIR)" && \
+		cd "$(DEVICE_MAPPER_RS_DIR)" && cat "$(CONFIG_DIR)/devicemapper.patch" | git apply
 
 fetch-gdb:
 	@echo "$(GREEN_COLOR)Fetching gdb source.$(NC)"
@@ -79,7 +88,7 @@ fetch-gdb:
 	@rm -rf "$(GDB_DIR)"
 	@mv $(TOOLS_DIR)/*gdb* "$(TOOLS_DIR)/gdb"
 
-deps: toolchains fetch-linux-kernel fetch-busybox fetch-strace fetch-gdb fetch-qemu
+deps: toolchains fetch-linux-kernel fetch-busybox fetch-strace fetch-gdb fetch-qemu fetch-devicemapper-rs
 
 compile-busybox: $(BUSYBOX_DIR)/busybox $(CONFIG_DIR)/busybox.config
 	@echo "$(GREEN_COLOR)Building busybox.$(NC)"
